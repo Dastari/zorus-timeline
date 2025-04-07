@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label"; // Assuming Label component exists or using native label
+import { Label } from "@/components/ui/label";
 import { FilterState, ActivityType } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -12,7 +12,6 @@ interface ActivityFiltersProps {
   className?: string;
 }
 
-// Helper to map FilterState keys to labels and colors
 const filterOptions: {
   key: keyof FilterState;
   label: string;
@@ -24,7 +23,7 @@ const filterOptions: {
     label: "Web",
     colorClass: "bg-activity-web",
     type: ActivityType.WebPage,
-  }, // Use Tailwind colors defined in config
+  },
   {
     key: "applications",
     label: "Apps",
@@ -50,7 +49,6 @@ export function ActivityFilters({
   onFilterChange,
   className,
 }: ActivityFiltersProps) {
-  // Check if the Label component was added by shadcn, otherwise use native label
   const LabelComponent = Label || "label";
 
   return (
@@ -58,12 +56,11 @@ export function ActivityFilters({
       <span className="text-sm font-medium mr-2">Show:</span>
       {filterOptions.map((option) => (
         <div key={option.key} className="flex items-center space-x-2">
-          {/* Use a colored square matching the activity type color */}
           <div className={cn("w-3 h-3 rounded-sm", option.colorClass)}></div>
           <Checkbox
             id={`filter-${option.key}`}
             checked={filters[option.key]}
-            onCheckedChange={(checked) => onFilterChange(option.key, !!checked)} // Pass boolean value
+            onCheckedChange={(checked) => onFilterChange(option.key, !!checked)}
             aria-label={`Filter ${option.label}`}
           />
           <LabelComponent

@@ -22,7 +22,6 @@ export function ApplicationBreakdownChart({
   activities,
 }: ApplicationBreakdownChartProps) {
   const data = React.useMemo(() => {
-    // Change from count to duration sum
     const appDurations: { [appName: string]: number } = {};
 
     activities
@@ -31,18 +30,13 @@ export function ApplicationBreakdownChart({
       )
       .forEach((activity) => {
         const appName = activity.applicationName!;
-        // Sum durationMinutes instead of counting
         appDurations[appName] =
           (appDurations[appName] || 0) + activity.durationMinutes;
       });
 
-    return (
-      Object.entries(appDurations)
-        // Change variable name from count to duration
-        .map(([name, duration]) => ({ name, duration }))
-        // Sort by duration descending
-        .sort((a, b) => b.duration - a.duration)
-    );
+    return Object.entries(appDurations)
+      .map(([name, duration]) => ({ name, duration }))
+      .sort((a, b) => b.duration - a.duration);
   }, [activities]);
 
   const topApps = data.slice(0, 10);
@@ -62,7 +56,6 @@ export function ApplicationBreakdownChart({
     );
   }
 
-  // Format duration (minutes) into hours/minutes string for tooltip/axis
   const formatDuration = (totalMinutes: number): string => {
     if (totalMinutes < 1) return "< 1 min";
     const hours = Math.floor(totalMinutes / 60);
@@ -78,7 +71,7 @@ export function ApplicationBreakdownChart({
       <CardHeader>
         <CardTitle>Application Usage Breakdown (Top 10 by Duration)</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pl-0">
         <ResponsiveContainer width="100%" height={300}>
           <BarChart
             data={topApps}
@@ -86,7 +79,7 @@ export function ApplicationBreakdownChart({
             margin={{
               top: 5,
               right: 30,
-              left: 40,
+              left: 0,
               bottom: 5,
             }}
           >
@@ -100,7 +93,7 @@ export function ApplicationBreakdownChart({
             <YAxis
               dataKey="name"
               type="category"
-              width={250}
+              width={200}
               interval={0}
               tick={{ fontSize: 11 }}
             />

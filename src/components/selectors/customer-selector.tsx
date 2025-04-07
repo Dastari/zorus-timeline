@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Check, ChevronsUpDown } from "lucide-react";
-import { useDebounce } from "@uidotdev/usehooks"; // Simple debounce hook
+import { useDebounce } from "@uidotdev/usehooks";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,7 @@ export function CustomerSelector({
 }: CustomerSelectorProps) {
   const [open, setOpen] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState("");
-  const debouncedSearchTerm = useDebounce(searchTerm, 300); // Debounce search input by 300ms
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -70,9 +70,6 @@ export function CustomerSelector({
 
     if (open || (selectedCustomerId && customers.length === 0)) {
       fetchCustomers();
-    } else if (!open) {
-      // Optional: Clear results when closed if desired
-      // setCustomers([]);
     }
   }, [debouncedSearchTerm, open, selectedCustomerId, customers.length]);
 
@@ -88,8 +85,6 @@ export function CustomerSelector({
     const selectedCust =
       customers.find((cust) => cust.uuid === newSelectedId) || null;
     onSelectCustomer(selectedCust);
-    // Optionally clear search term after selection
-    // setSearchTerm('');
   };
 
   return (
@@ -108,8 +103,6 @@ export function CustomerSelector({
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] max-h-[--radix-popover-content-available-height] p-0">
         <Command shouldFilter={false}>
-          {" "}
-          {/* We handle filtering via API */}
           <CommandInput
             placeholder="Search customers..."
             value={searchTerm}

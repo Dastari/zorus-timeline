@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronsUpDown, Laptop } from "lucide-react"; // Add Laptop icon
+import { Check, ChevronsUpDown, Laptop } from "lucide-react";
 import { useDebounce } from "@uidotdev/usehooks";
 
 import { cn } from "@/lib/utils";
@@ -19,18 +19,17 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { getEndpoints } from "@/services/endpoint-service"; // Import the endpoint service
+import { getEndpoints } from "@/services/endpoint-service";
 import { Endpoint } from "@/types";
 
 interface EndpointSelectorProps {
-  customerId: string; // Customer ID is required to fetch endpoints
+  customerId: string;
   onSelectEndpoint: (endpoint: Endpoint | null) => void;
   selectedEndpointId?: string;
   className?: string;
-  disabled?: boolean; // Add disabled prop
+  disabled?: boolean;
 }
 
-// Simple regex for basic UUID format validation
 const UUID_REGEX =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -39,7 +38,7 @@ export function EndpointSelector({
   onSelectEndpoint,
   selectedEndpointId,
   className,
-  disabled = false, // Add disabled prop with default
+  disabled = false,
 }: EndpointSelectorProps) {
   const [open, setOpen] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState("");
@@ -79,7 +78,6 @@ export function EndpointSelector({
       setIsLoading(true);
       setError(null);
       try {
-        // Use page 1, pageSize 0 to potentially get all, adjust if needed
         const fetchedEndpoints = await getEndpoints(
           customerId,
           1,
@@ -98,14 +96,10 @@ export function EndpointSelector({
       }
     }
 
-    // Fetch when customer ID is valid and popover opens or search term changes
     if (open || debouncedSearchTerm !== undefined) {
       fetchEndpoints();
-    } else if (!open) {
-      // Optional: Clear results when closed
-      // setEndpoints([]);
     }
-  }, [customerId, debouncedSearchTerm, open]); // Removed selectedEndpointId, users.length dependencies
+  }, [customerId, debouncedSearchTerm, open]);
 
   React.useEffect(() => {
     setSelectedValue(selectedEndpointId);
@@ -131,9 +125,7 @@ export function EndpointSelector({
           className={cn("w-full justify-between", className)}
           disabled={isButtonDisabled}
         >
-          {selectedEndpoint
-            ? selectedEndpoint.name // Display endpoint name
-            : "Select endpoint..."}
+          {selectedEndpoint ? selectedEndpoint.name : "Select endpoint..."}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>

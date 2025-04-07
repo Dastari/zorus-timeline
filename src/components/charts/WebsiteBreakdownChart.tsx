@@ -18,23 +18,19 @@ interface WebsiteBreakdownChartProps {
   activities: Activity[];
 }
 
-// Helper to extract domain from URL
 const getDomain = (url: string | undefined): string | null => {
   if (!url) return null;
   try {
     const parsedUrl = new URL(url);
-    // Handle cases like chrome://, edge:// etc.
     if (!parsedUrl.hostname && parsedUrl.protocol) {
-      return parsedUrl.protocol.replace(/:$/, ""); // Return protocol name
+      return parsedUrl.protocol.replace(/:$/, "");
     }
-    return parsedUrl.hostname.replace(/^www\./, ""); // Remove www.
+    return parsedUrl.hostname.replace(/^www\./, "");
   } catch {
-    // console.warn("Could not parse URL:", url);
     return null;
   }
 };
 
-// Format duration (minutes) into hours/minutes string (can share if needed)
 const formatDuration = (totalMinutes: number): string => {
   if (totalMinutes < 1) return "< 1 min";
   const hours = Math.floor(totalMinutes / 60);
@@ -88,7 +84,7 @@ export function WebsiteBreakdownChart({
       <CardHeader>
         <CardTitle>Website Usage Breakdown (Top 10 by Domain)</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pl-0">
         <ResponsiveContainer width="100%" height={300}>
           <BarChart
             data={topDomains}
@@ -96,7 +92,7 @@ export function WebsiteBreakdownChart({
             margin={{
               top: 5,
               right: 30,
-              left: 40,
+              left: 0,
               bottom: 5,
             }}
           >
@@ -110,7 +106,7 @@ export function WebsiteBreakdownChart({
             <YAxis
               dataKey="name"
               type="category"
-              width={250}
+              width={200}
               interval={0}
               tick={{ fontSize: 11 }}
             />
@@ -122,8 +118,7 @@ export function WebsiteBreakdownChart({
               cursor={{ fill: "transparent" }}
             />
             <Legend formatter={() => "Time Spent"} />
-            <Bar dataKey="duration" fill="#10B981" name="Time Spent" />{" "}
-            {/* Use WebPage color */}
+            <Bar dataKey="duration" fill="#10B981" name="Time Spent" />
           </BarChart>
         </ResponsiveContainer>
       </CardContent>

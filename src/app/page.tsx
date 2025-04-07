@@ -173,12 +173,8 @@ export default function DashboardPage() {
         loadedFileName: file.name,
       });
 
-      const today = startOfDay(new Date());
-      setSelectedDate(
-        today >= parsedResult.startDate && today <= parsedResult.endDate
-          ? today
-          : parsedResult.startDate
-      );
+      // Set the selected date to the *end* date from the CSV
+      setSelectedDate(startOfDay(parsedResult.endDate));
       setIsFileData(true);
     } catch (err) {
       console.error("Error processing file:", err);
@@ -506,22 +502,18 @@ export default function DashboardPage() {
           {/* Row 3: Charts Area */}
           {currentTimelineData && currentTimelineData.activities.length > 0 && (
             <>
-              {/* Row 3a: App & Website Breakdowns */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              {/* Updated grid for all three charts */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
                 <ApplicationBreakdownChart
                   activities={currentTimelineData.activities}
                 />
                 <WebsiteBreakdownChart
                   activities={currentTimelineData.activities}
                 />
-              </div>
-              {/* Row 3b: Activity Type Breakdown */}
-              <div className="mt-6">
-                <div className="max-w-md mx-auto">
-                  <ActivityTypeBreakdownChart
-                    activities={currentTimelineData.activities}
-                  />
-                </div>
+                {/* Moved ActivityTypeBreakdownChart here */}
+                <ActivityTypeBreakdownChart
+                  activities={currentTimelineData.activities}
+                />
               </div>
             </>
           )}
