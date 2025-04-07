@@ -1,0 +1,532 @@
+"use client";
+
+import React, { useRef, useEffect, useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
+import { Activity, FilterState, ZoomLevel, ActivityType } from "@/types";
+import { format, startOfDay, differenceInMinutes, addMinutes } from "date-fns";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+
+interface TimelineProps {
+  activities: Activity[];
+  filters: FilterState;
+  zoomLevel: ZoomLevel;
+  selectedActivityId: string | null;
+  onZoomChange: (level: ZoomLevel) => void;
+  className?: string;
+  currentDate: Date;
+  onActivityClick: (activity: Activity | null) => void;
+}
+
+// Define colors for each activity type
+const ACTIVITY_COLORS: { [key in ActivityType]: string } = {
+  [ActivityType.Application]: "#3B82F6", // blue-500
+  [ActivityType.WebPage]: "#10B981", // emerald-500
+  [ActivityType.Idle]: "#F59E0B", // amber-500
+  [ActivityType.Other]: "#6B7280", // gray-500
+};
+
+// Helper to map filter state keys to activity types
+const filterTypeMap: Record<keyof FilterState, ActivityType> = {
+  webPages: ActivityType.WebPage,
+  applications: ActivityType.Application,
+  idle: ActivityType.Idle,
+  other: ActivityType.Other,
+};
+
+// Constants for drawing
+const SCALE_HEIGHT = 30; // Height for the hour labels/ticks
+const BAR_HEIGHT = 50; // Height of the activity bars area
+const TOTAL_TIMELINE_HEIGHT = SCALE_HEIGHT + BAR_HEIGHT;
+const TICK_COLOR = "#E5E7EB"; // gray-200
+const LABEL_COLOR = "#6B7280"; // gray-500
+
+// Map ZoomLevel to visible duration in minutes
+const zoomLevelToDuration: Record<ZoomLevel, number> = {
+  [ZoomLevel.Hour]: 60,
+  [ZoomLevel.ThreeHours]: 180,
+  [ZoomLevel.SixHours]: 360,
+  [ZoomLevel.TwelveHours]: 720,
+  [ZoomLevel.Day]: 1440,
+};
+
+// Minimum and Maximum zoom duration in minutes
+const MIN_DURATION_MINUTES = 15;
+const MAX_DURATION_MINUTES = 1440; // 24 hours
+
+export function Timeline({
+  activities,
+  filters,
+  zoomLevel,
+  selectedActivityId,
+  onZoomChange,
+  className,
+  currentDate,
+  onActivityClick,
+}: TimelineProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null); // Ref for the container div to get width
+  const [canvasWidth, setCanvasWidth] = useState(0);
+
+  // State for the visible time window
+  const [viewStartMinutes, setViewStartMinutes] = useState(0);
+  const [viewDurationMinutes, setViewDurationMinutes] = useState(
+    () => zoomLevelToDuration[zoomLevel] || 1440 // Initialize from prop
+  );
+
+  // NEW: State for hover/tooltip
+  const [hoveredActivity, setHoveredActivity] = useState<Activity | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const [showPanButtons, setShowPanButtons] = useState(false); // State for button visibility
+
+  // Filter activities based on the current filter state
+  const filteredActivities = useMemo(() => {
+    const activeFilterTypes = Object.entries(filters)
+      .filter((entry) => entry[1] === true)
+      .map(([key]) => filterTypeMap[key as keyof FilterState]);
+    return activities.filter((activity) =>
+      activeFilterTypes.includes(activity.type)
+    );
+  }, [activities, filters]);
+
+  // Effect to update internal duration when button-driven zoomLevel prop changes
+  useEffect(() => {
+    const newDuration = zoomLevelToDuration[zoomLevel] || 1440;
+    setViewDurationMinutes(newDuration);
+    setViewStartMinutes((prev) => clampViewStart(prev, newDuration));
+    // Add clampViewStart to dependency array if it's not stable (it should be)
+  }, [zoomLevel]); // Keep dependency on zoomLevel prop
+
+  // Function to draw the timeline scale - MODIFIED
+  const drawScale = (
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    startMin: number, // viewStartMinutes
+    durationMin: number // visibleDurationMinutes
+  ) => {
+    ctx.clearRect(0, 0, width, SCALE_HEIGHT);
+    ctx.fillStyle = LABEL_COLOR;
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+
+    const pixelsPerMinute = width / durationMin;
+    const dayStart = startOfDay(currentDate);
+
+    // Determine appropriate interval based on duration
+    let intervalMinutes = 60;
+    if (durationMin <= 60) intervalMinutes = 5; // Finer ticks when zoomed in
+    else if (durationMin <= 180) intervalMinutes = 15;
+    else if (durationMin <= 360) intervalMinutes = 30;
+
+    const endMin = startMin + durationMin;
+
+    // Find the first tick position >= startMin
+    const firstTickMinute =
+      Math.ceil(startMin / intervalMinutes) * intervalMinutes;
+
+    for (let min = firstTickMinute; min <= endMin; min += intervalMinutes) {
+      const x = (min - startMin) * pixelsPerMinute;
+      let tickHeight = 5;
+      let showLabel = false;
+      let labelFormat = "h:mma";
+
+      // Determine tick height and label visibility based on interval
+      if (min % 60 === 0) {
+        // Hour marks
+        tickHeight = 10;
+        showLabel = durationMin >= 360; // Show hour labels on wider views
+        labelFormat = "ha";
+      } else if (min % 30 === 0) {
+        tickHeight = 7;
+        showLabel = durationMin < 360 && durationMin >= 180; // Show 30min labels
+      } else if (min % 15 === 0) {
+        tickHeight = 5;
+        showLabel = durationMin < 180 && durationMin >= 60; // Show 15min labels
+      } else if (min % 5 === 0) {
+        // 5 min ticks only visible when very zoomed in
+        tickHeight = 3;
+        showLabel = durationMin < 60;
+      }
+
+      ctx.strokeStyle = TICK_COLOR;
+      ctx.beginPath();
+      ctx.moveTo(x, SCALE_HEIGHT - tickHeight);
+      ctx.lineTo(x, SCALE_HEIGHT);
+      ctx.stroke();
+
+      if (showLabel) {
+        const labelDate = addMinutes(dayStart, min);
+        const label = format(labelDate, labelFormat).toLowerCase();
+        // Basic check to avoid drawing labels too close to each other or off-screen
+        if (x > 20 && x < width - 20) {
+          // TODO: Add smarter label collision detection if needed
+          ctx.fillText(label, x, SCALE_HEIGHT - tickHeight - 4);
+        }
+      }
+    }
+  };
+
+  // Function to draw the activity bars - MODIFIED
+  const drawBars = (
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    startMin: number, // viewStartMinutes
+    durationMin: number // visibleDurationMinutes
+  ) => {
+    ctx.clearRect(0, SCALE_HEIGHT, width, BAR_HEIGHT);
+
+    const dayStart = startOfDay(currentDate);
+    const pixelsPerMinute = width / durationMin;
+    const viewEndMinutes = startMin + durationMin;
+
+    filteredActivities.forEach((activity) => {
+      if (
+        !(activity.startTime instanceof Date) ||
+        !(activity.endTime instanceof Date)
+      ) {
+        return;
+      }
+
+      const activityStartMinutes = differenceInMinutes(
+        activity.startTime,
+        dayStart
+      );
+      const activityEndMinutes = differenceInMinutes(
+        activity.endTime,
+        dayStart
+      );
+
+      // Check if activity overlaps with the current view
+      if (
+        activityEndMinutes <= startMin ||
+        activityStartMinutes >= viewEndMinutes
+      ) {
+        return; // Skip activities entirely outside the view
+      }
+
+      // Clamp activity times to the VIEW boundaries for calculating width/position
+      const clampedStartView = Math.max(startMin, activityStartMinutes);
+      const clampedEndView = Math.min(viewEndMinutes, activityEndMinutes);
+
+      const durationInView = clampedEndView - clampedStartView;
+      if (durationInView <= 0) return;
+
+      // Calculate position RELATIVE to the start of the view
+      const x = (clampedStartView - startMin) * pixelsPerMinute;
+      const barWidth = durationInView * pixelsPerMinute;
+
+      ctx.fillStyle =
+        ACTIVITY_COLORS[activity.type] || ACTIVITY_COLORS[ActivityType.Other];
+
+      if (activity.id === selectedActivityId) {
+        ctx.save();
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 1.5;
+        // Ensure stroke doesn't make bar visually start before x
+        ctx.strokeRect(
+          x + ctx.lineWidth / 2,
+          SCALE_HEIGHT + ctx.lineWidth / 2,
+          barWidth - ctx.lineWidth,
+          BAR_HEIGHT - ctx.lineWidth
+        );
+        ctx.restore();
+      }
+
+      ctx.fillRect(x, SCALE_HEIGHT, barWidth, BAR_HEIGHT);
+    });
+  };
+
+  // Main drawing effect - MODIFIED
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const { width } = container.getBoundingClientRect();
+
+    // ... DPR setup ...
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(TOTAL_TIMELINE_HEIGHT * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${TOTAL_TIMELINE_HEIGHT}px`;
+    ctx.scale(dpr, dpr);
+
+    // Pass view parameters to drawing functions
+    drawScale(ctx, width, viewStartMinutes, viewDurationMinutes);
+    drawBars(ctx, width, viewStartMinutes, viewDurationMinutes);
+  }, [
+    filteredActivities,
+    currentDate,
+    selectedActivityId,
+    canvasWidth,
+    viewStartMinutes,
+    viewDurationMinutes,
+  ]);
+
+  // Handle container resize
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (entries[0]) {
+        const { width } = entries[0].contentRect;
+        // Update state to trigger redraw
+        setCanvasWidth(width);
+      }
+    });
+
+    resizeObserver.observe(container);
+    // Initial width set
+    setCanvasWidth(container.getBoundingClientRect().width);
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  // Helper to clamp viewStartMinutes
+  const clampViewStart = (newStart: number, duration: number): number => {
+    const maxStart = Math.max(0, 1440 - duration);
+    return Math.max(0, Math.min(newStart, maxStart));
+  };
+
+  // --- Event Handlers - IMPLEMENTED ---
+  const handleWheelZoom = (event: React.WheelEvent) => {
+    // Always prevent default for wheel events on the timeline
+    event.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas || !canvasWidth) return;
+
+    const scrollAmount = event.deltaY;
+    const currentDuration = viewDurationMinutes;
+
+    // --- Granular Zooming (Default Wheel Action) ---
+    const zoomFactor = 1.15;
+    let nextDuration =
+      scrollAmount > 0
+        ? currentDuration * zoomFactor
+        : currentDuration / zoomFactor;
+    nextDuration = Math.max(
+      MIN_DURATION_MINUTES,
+      Math.min(MAX_DURATION_MINUTES, nextDuration)
+    );
+
+    if (Math.abs(nextDuration - currentDuration) > 1) {
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = event.clientX - rect.left;
+      const pixelsPerMinute = canvasWidth / currentDuration;
+      const timeAtMousePointer = viewStartMinutes + mouseX / pixelsPerMinute;
+
+      const nextPixelsPerMinute = canvasWidth / nextDuration;
+      let newViewStart = timeAtMousePointer - mouseX / nextPixelsPerMinute;
+      newViewStart = clampViewStart(newViewStart, nextDuration);
+
+      setViewStartMinutes(newViewStart);
+      setViewDurationMinutes(nextDuration);
+    }
+
+    setHoveredActivity(null);
+    setTooltipPosition(null);
+  };
+
+  // --- Panning Button Handlers ---
+  const handlePan = (direction: "left" | "right") => {
+    const panAmount = viewDurationMinutes * 0.1; // Pan 10% of the current view
+    const change = direction === "left" ? -panAmount : panAmount;
+    setViewStartMinutes((prev) =>
+      clampViewStart(prev + change, viewDurationMinutes)
+    );
+  };
+
+  // --- Hit Detection Logic ---
+  const getActivityAtPosition = (
+    mouseX: number,
+    mouseY: number
+  ): Activity | null => {
+    if (
+      !canvasRef.current ||
+      mouseY < SCALE_HEIGHT ||
+      mouseY > TOTAL_TIMELINE_HEIGHT ||
+      !canvasWidth
+    ) {
+      return null;
+    }
+    const pixelsPerMinute = canvasWidth / viewDurationMinutes;
+    if (pixelsPerMinute <= 0) return null; // Avoid division by zero
+    const timeAtMouse = viewStartMinutes + mouseX / pixelsPerMinute;
+    const dayStart = startOfDay(currentDate);
+    for (let i = filteredActivities.length - 1; i >= 0; i--) {
+      const activity = filteredActivities[i];
+      if (
+        !(activity.startTime instanceof Date) ||
+        !(activity.endTime instanceof Date)
+      )
+        continue;
+      const activityStartMinutes = differenceInMinutes(
+        activity.startTime,
+        dayStart
+      );
+      const activityEndMinutes = differenceInMinutes(
+        activity.endTime,
+        dayStart
+      );
+      if (
+        timeAtMouse >= activityStartMinutes &&
+        timeAtMouse < activityEndMinutes
+      ) {
+        // More precise check using calculated bar position:
+        const viewStartOfBar = Math.max(viewStartMinutes, activityStartMinutes);
+        const barX = (viewStartOfBar - viewStartMinutes) * pixelsPerMinute;
+        const viewEndOfBar = Math.min(
+          viewStartMinutes + viewDurationMinutes,
+          activityEndMinutes
+        );
+        const barW = (viewEndOfBar - viewStartOfBar) * pixelsPerMinute;
+        if (mouseX >= barX && mouseX < barX + barW) {
+          return activity;
+        }
+      }
+    }
+    return null;
+  };
+
+  const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    // Remove unused DPR calculation for click coords
+    // const dpr = window.devicePixelRatio || 1;
+    // const mouseX = (event.clientX - rect.left) * dpr;
+    // const mouseY = (event.clientY - rect.top) * dpr;
+
+    // Pass the unscaled coordinates relative to canvas display rect
+    const clickedActivity = getActivityAtPosition(
+      event.clientX - rect.left,
+      event.clientY - rect.top
+    );
+    if (onActivityClick) {
+      onActivityClick(clickedActivity);
+    }
+  };
+
+  const handleCanvasMouseMove = (
+    event: React.MouseEvent<HTMLCanvasElement>
+  ) => {
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+
+    const activity = getActivityAtPosition(mouseX, mouseY);
+    setHoveredActivity(activity);
+
+    if (activity) {
+      setTooltipPosition({ x: event.clientX + 15, y: event.clientY + 30 });
+    } else {
+      setTooltipPosition(null);
+    }
+  };
+
+  const handleCanvasMouseLeave = () => {
+    setHoveredActivity(null);
+    setTooltipPosition(null);
+  };
+
+  return (
+    <TooltipProvider delayDuration={100}>
+      <div
+        ref={containerRef}
+        className={cn("w-full relative overflow-hidden", className)}
+        style={{ height: `${TOTAL_TIMELINE_HEIGHT}px` }}
+        onWheel={handleWheelZoom}
+        onMouseEnter={() => setShowPanButtons(true)} // Show buttons on enter
+        onMouseLeave={() => setShowPanButtons(false)} // Hide buttons on leave
+      >
+        <canvas
+          ref={canvasRef}
+          onClick={handleCanvasClick}
+          onMouseMove={handleCanvasMouseMove}
+          onMouseLeave={handleCanvasMouseLeave}
+          style={{
+            display: "block",
+            width: "100%",
+            height: "100%",
+            cursor: hoveredActivity ? "pointer" : "default",
+          }}
+        />
+
+        {/* Panning Buttons - Show on hover and when not fully zoomed out */}
+        {showPanButtons && viewDurationMinutes < MAX_DURATION_MINUTES && (
+          <>
+            {/* Left Pan Button */}
+            <Button
+              variant="outline"
+              size="icon"
+              className="absolute left-1 top-1/2 -translate-y-1/2 z-10 h-8 w-8 opacity-70 hover:opacity-100"
+              onClick={() => handlePan("left")}
+              disabled={viewStartMinutes <= 0} // Disable if at the beginning
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            {/* Right Pan Button */}
+            <Button
+              variant="outline"
+              size="icon"
+              className="absolute right-1 top-1/2 -translate-y-1/2 z-10 h-8 w-8 opacity-70 hover:opacity-100"
+              onClick={() => handlePan("right")}
+              disabled={viewStartMinutes >= 1440 - viewDurationMinutes} // Disable if at the end
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </>
+        )}
+
+        {hoveredActivity && tooltipPosition && (
+          <Tooltip open={true}>
+            {/* Position the trigger element at the desired tooltip location */}
+            <TooltipTrigger
+              style={{
+                position: "fixed",
+                left: `${tooltipPosition.x}px`,
+                top: `${tooltipPosition.y}px`,
+                width: 0,
+                height: 0,
+                pointerEvents: "none",
+              }}
+            />
+            <TooltipContent side="top" align="start">
+              <p className="font-medium">{hoveredActivity.title}</p>
+              <p className="text-sm text-muted-foreground">
+                {format(hoveredActivity.startTime, "h:mm:ss a")} -{" "}
+                {format(hoveredActivity.endTime, "h:mm:ss a")}
+              </p>
+              <p className="text-xs">
+                Duration: {hoveredActivity.durationMinutes} min
+              </p>
+              <p className="text-xs">Type: {hoveredActivity.type}</p>
+              {hoveredActivity.applicationName && (
+                <p className="text-xs">
+                  App: {hoveredActivity.applicationName}
+                </p>
+              )}
+              {hoveredActivity.url && (
+                <p className="text-xs">URL: {hoveredActivity.url}</p>
+              )}
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {/* TODO: Add a visual scrollbar element absolutely positioned */}
+      </div>
+    </TooltipProvider>
+  );
+}
