@@ -28,6 +28,7 @@ import { ActivityDetails } from "@/components/activity/activity-details";
 import { ActivityTypeBreakdownChart } from "@/components/charts/ActivityTypeBreakdownChart";
 import { ApplicationBreakdownChart } from "@/components/charts/ApplicationBreakdownChart";
 import { WebsiteBreakdownChart } from "@/components/charts/WebsiteBreakdownChart";
+import { HourlyTimelineBreakdown } from "@/components/timeline/hourly-timeline-breakdown";
 
 // Services & Types
 import { getActivities } from "@/services/activity-service";
@@ -510,12 +511,20 @@ export default function DashboardPage() {
                 <WebsiteBreakdownChart
                   activities={currentTimelineData.activities}
                 />
-                {/* Moved ActivityTypeBreakdownChart here */}
                 <ActivityTypeBreakdownChart
                   activities={currentTimelineData.activities}
                 />
               </div>
             </>
+          )}
+
+          {/* NEW: Hourly Breakdown Panel */}
+          {currentTimelineData && currentTimelineData.activities.length > 0 && (
+            <div className="mt-6">
+              <HourlyTimelineBreakdown
+                activities={currentTimelineData.activities}
+              />
+            </div>
           )}
         </div>
       ) : (
