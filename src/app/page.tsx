@@ -312,9 +312,9 @@ export default function DashboardPage() {
     !fileDateRange ||
     !isSameDay(selectedDate, fileDateRange.end);
   // && !isSameDay(selectedDate, startOfDay(new Date())); // Optional: Prevent going to future
-  // Determine title based on data source
+  // Update timelineTitle to use csvSummary
   const timelineTitle = isFileData
-    ? `File: ${csvSummary?.loadedFileName ?? "Loading..."}`
+    ? "Timeline Activity" // Changed from showing filename
     : selectedEndpoint
     ? `Activity for ${currentTimelineData?.username ?? "user"} on endpoint ${
         selectedEndpoint.name
@@ -325,7 +325,7 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Top Row: Selectors & File Upload */}
-      <div className="flex flex-wrap items-end gap-4">
+      <div className="flex flex-wrap items-end gap-4 p-4 border rounded-md bg-muted">
         {/* Customer Selector */}
         <div className="flex-1 min-w-[200px]">
           <label
@@ -378,15 +378,12 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
-
-      <hr className="my-2 border-border" />
-
       {/* Timeline Area */}
       {isFileData || (selectedCustomer && selectedEndpoint) ? (
         <div className="flex flex-col gap-6">
           {/* CSV Summary HERE */}
           {isFileData && csvSummary && (
-            <div className="p-4 border rounded-lg bg-card text-sm mb-4">
+            <div className="p-4 border rounded-lg bg-card text-sm mb-4 hidden">
               <h3 className="font-semibold mb-2">CSV File Summary</h3>
               <p>
                 <span className="font-medium">File Name:</span>{" "}
@@ -405,7 +402,7 @@ export default function DashboardPage() {
           )}
 
           {/* Row 1: Controls */}
-          <div className="flex flex-wrap items-center gap-4 border-b pb-4">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-1 rounded-md border p-1">
                 <Button
@@ -423,6 +420,7 @@ export default function DashboardPage() {
                   fromDate={isFileData ? fileDateRange?.start : undefined}
                   toDate={isFileData ? fileDateRange?.end : undefined}
                   highlightedDays={datesWithEvents}
+                  className="border-0"
                 />
                 <Button
                   variant="ghost"

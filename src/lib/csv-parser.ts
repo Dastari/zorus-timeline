@@ -1,12 +1,6 @@
-import {
-  parse,
-  parseISO,
-  differenceInMinutes,
-  isValid,
-  startOfDay,
-} from "date-fns";
-import Papa from "papaparse";
 import { Activity, ActivityType } from "@/types";
+import { startOfDay, differenceInMinutes, isValid } from "date-fns";
+import Papa from "papaparse";
 
 // Interface for the expected (or possible) row structure from CSV
 interface CsvActivityRow {
@@ -33,87 +27,42 @@ interface CsvActivityRow {
 /**
  * Maps spreadsheet activity type string to our enum.
  */
-function mapExcelActivityType(type: string | null | undefined): ActivityType {
-  if (!type) return ActivityType.Other;
-  const lowerType = type.toLowerCase();
-  if (lowerType.includes("webpage") || lowerType.includes("web"))
+function mapExcelActivityType(typeStr: string): ActivityType {
+  const lowerType = String(typeStr).toLowerCase(); // Ensure string comparison
+  if (lowerType.includes("web") || lowerType.includes("http")) {
     return ActivityType.WebPage;
-  if (lowerType.includes("application")) return ActivityType.Application;
-  if (lowerType.includes("idle")) return ActivityType.Idle;
-  if (lowerType.includes("machine lock")) return ActivityType.Idle; // Map Machine Lock to Idle
-  // Add other mappings if necessary
+  } else if (
+    lowerType.includes("app") ||
+    lowerType.includes("program") ||
+    lowerType.includes("exe")
+  ) {
+    return ActivityType.Application;
+  } else if (
+    lowerType.includes("idle") ||
+    lowerType.includes("lock") ||
+    lowerType.includes("away")
+  ) {
+    return ActivityType.Idle;
+  }
   return ActivityType.Other;
 }
 
 /**
- * Parses a duration string like "1m 2s" or "3h 4m 5s" or just seconds "34s" into total minutes.
+ * Function to safely parse the timestamp string - DEFINED HERE
  */
-function parseDurationToMinutes(
-  durationStr: string | null | undefined
-): number {
-  if (!durationStr) return 0;
-  let totalSeconds = 0;
-  const durationRegex = /(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?/i;
-  const match = durationStr.match(durationRegex);
-
-  if (match) {
-    const hours = parseInt(match[1] || "0", 10);
-    const minutes = parseInt(match[2] || "0", 10);
-    const seconds = parseInt(match[3] || "0", 10);
-    totalSeconds = hours * 3600 + minutes * 60 + seconds;
-  } else {
-    // Maybe it's just a number of seconds? Try parsing directly.
-    const secondsOnly = parseInt(durationStr, 10);
-    if (!isNaN(secondsOnly)) {
-      totalSeconds = secondsOnly;
-    } else {
-      console.warn(`Could not parse duration string: ${durationStr}`);
-    }
+function parseTimestampToDate(
+  timestampStr: string | null | undefined
+): Date | null {
+  if (!timestampStr) return null;
+  try {
+    // Ensure input is treated as string before parseFloat
+    const timestampSeconds = parseFloat(String(timestampStr));
+    if (isNaN(timestampSeconds)) return null;
+    const date = new Date(timestampSeconds * 1000);
+    return isValid(date) ? date : null;
+  } catch {
+    return null;
   }
-  return Math.round(totalSeconds / 60); // Return minutes, rounded
-}
-
-/**
- * Parses a date/time string, attempting various formats.
- * Crucial for handling different date formats that might be in CSV.
- */
-function parseCsvDateTime(dateTimeStr: string | null | undefined): Date | null {
-  if (!dateTimeStr) return null;
-  let parsedDate: Date | null = null;
-  const formatsToTry = [
-    "d/MM/yyyy HH:mm",
-    "M/d/yyyy H:mm",
-    "MM/dd/yyyy hh:mm:ss a", // Common CSV format
-    "yyyy-MM-dd HH:mm:ss",
-    "yyyy-MM-dd'T'HH:mm:ss",
-    "iso", // ISO 8601
-  ];
-  console.log(`Attempting to parse: "${dateTimeStr}"`); // Log input string
-  for (const fmt of formatsToTry) {
-    try {
-      if (fmt === "iso") {
-        parsedDate = parseISO(dateTimeStr);
-      } else {
-        parsedDate = parse(dateTimeStr, fmt, new Date());
-      }
-      console.log(
-        `  Trying format "${fmt}": Result valid? ${isValid(
-          parsedDate
-        )}, Value: ${parsedDate}`
-      ); // Log result
-      if (isValid(parsedDate)) break;
-      parsedDate = null;
-    } catch (e) {
-      console.log(
-        `  Format "${fmt}" threw error: ${e instanceof Error ? e.message : e}`
-      );
-      parsedDate = null;
-    }
-  }
-  if (!parsedDate) {
-    console.warn(`Could not parse date string from CSV: "${dateTimeStr}"`);
-  }
-  return isValid(parsedDate) ? parsedDate : null;
 }
 
 // Define the return type for the parser
@@ -148,119 +97,113 @@ export async function parseActivityCsv(
           }
 
           if (!results.data || results.data.length === 0) {
-            throw new Error("CSV file contains no valid data rows.");
+            throw new Error("CSV file is empty or has no data rows.");
           }
-
-          // Dynamically find header names (case-insensitive)
-          const findHeader = (possibleNames: string[]): string | undefined => {
-            const lowerCaseNames = possibleNames.map((n) => n.toLowerCase());
-            return results.meta.fields?.find((f) =>
-              lowerCaseNames.includes(f.toLowerCase())
-            );
+          const headers = Object.keys(results.data[0]).map((h) => h.trim());
+          const findHeader = (possibleNames: string[]): string | null => {
+            for (const name of possibleNames) {
+              const found = headers.find(
+                (h) => h.toLowerCase() === name.toLowerCase()
+              );
+              if (found) return found;
+            }
+            return null;
           };
 
-          const headerStartTime = findHeader([
-            "Start Date/Time",
-            "StartTime",
-            "Start Date",
-          ]);
-          const headerEndTime = findHeader([
-            "End Date/Time",
-            "EndTime",
-            "End Date",
-          ]);
-          const headerActivityType = findHeader(["Activity Type", "Type"]);
-          const headerDuration = findHeader(["Duration"]);
-          const headerApplication = findHeader(["Application", "App"]);
-          const headerWebsite = findHeader(["Website", "URL", "Webpage"]);
-          const headerCategories = findHeader(["Categories", "Category"]);
-          const headerTitle = findHeader(["Title"]); // Allow explicit title
+          // Find UTC timestamp headers
+          const startTimestampHeader = findHeader(["Start UTC Timestamp"]);
+          const endTimestampHeader = findHeader(["End UTC Timestamp"]);
 
-          // Validate required headers were found
-          if (!headerStartTime || !headerEndTime || !headerActivityType) {
+          // Find other necessary headers
+          const activityTypeHeader = findHeader(["Activity Type", "Type"]);
+          const appHeader = findHeader(["Application", "ApplicationName"]);
+          const urlHeader = findHeader(["Website", "URL"]);
+          const titleHeader = findHeader(["Window Title", "Title"]);
+          const categoryHeader = findHeader(["Category", "Categories"]);
+
+          // Validate required headers
+          if (!(startTimestampHeader && endTimestampHeader)) {
             throw new Error(
-              `Missing required columns in CSV file. Need at least variants of: Start Date/Time, End Date/Time, Activity Type. Found: ${results.meta.fields?.join(
-                ", "
-              )}`
+              'Required date headers "Start UTC Timestamp" and "End UTC Timestamp" not found.'
             );
           }
+          if (!activityTypeHeader)
+            throw new Error('Required header "Activity Type" not found.');
 
           let minDate: Date | null = null;
           let maxDate: Date | null = null;
           const activities: Activity[] = [];
-          let rawEventCount = 0; // Count rows before filtering/validation
+          let rawEventCount = 0;
 
           for (let i = 0; i < results.data.length; i++) {
             rawEventCount++;
-            const row: CsvActivityRow = results.data[i];
+            const row = results.data[i];
 
-            const startTime = parseCsvDateTime(
-              row[headerStartTime!] as string | undefined
+            // --- Use Timestamps (Convert row value to string) ---
+            const startTime = parseTimestampToDate(
+              String(row[startTimestampHeader!])
             );
-            const endTime = parseCsvDateTime(
-              row[headerEndTime!] as string | undefined
+            const endTime = parseTimestampToDate(
+              String(row[endTimestampHeader!])
             );
-            const activityTypeStr = row[headerActivityType!] as
-              | string
-              | undefined;
 
-            if (!startTime || !endTime || !activityTypeStr) {
-              console.warn(
-                `Skipping CSV row ${
-                  i + 1
-                } due to missing/invalid required data (Start/End Time, Activity Type).`
-              );
-              continue;
-            }
-
-            // Track min/max dates
-            if (!minDate || startTime < minDate) {
-              minDate = startTime;
-            }
-            if (!maxDate || startTime > maxDate) {
-              maxDate = startTime;
-            }
-            // Also check endTime for max date?
-            if (endTime > (maxDate ?? startTime)) {
-              maxDate = endTime;
-            }
-
-            const durationStr = headerDuration
-              ? (row[headerDuration] as string | undefined)
-              : undefined;
-            const appStr = headerApplication
-              ? (row[headerApplication] as string | undefined)
-              : undefined;
-            const webStr = headerWebsite
-              ? (row[headerWebsite] as string | undefined)
-              : undefined;
-            const catStr = headerCategories
-              ? (row[headerCategories] as string | undefined)
-              : undefined;
-            const titleStr = headerTitle
-              ? (row[headerTitle] as string | undefined)
-              : undefined;
-
+            // Ensure Activity Type is string
+            const activityTypeStr = String(row[activityTypeHeader] ?? "Other");
             const activityType = mapExcelActivityType(activityTypeStr);
-            const durationMinutes =
-              parseDurationToMinutes(durationStr) ||
-              differenceInMinutes(endTime, startTime);
+
+            if (!startTime || !endTime) {
+              console.warn(
+                `Skipping row ${i + 2}: Could not parse valid UTC timestamps.`
+              );
+              continue; // Skip row if dates are invalid
+            }
+
+            // Recalculate durationMinutes
+            let durationMinutes = differenceInMinutes(endTime, startTime);
+            if (durationMinutes < 0) {
+              console.warn(
+                `Skipping row ${
+                  i + 2
+                }: Negative duration calculated (${durationMinutes} mins). Start: ${startTime}, End: ${endTime}`
+              );
+              continue; // Skip negative duration rows
+            } else if (
+              durationMinutes === 0 &&
+              startTime.getTime() !== endTime.getTime()
+            ) {
+              // Handle cases less than a minute but not zero duration - show as 1 min?
+              durationMinutes = 1;
+            }
+
+            // Date Range Tracking
+            if (!minDate || startTime < minDate) minDate = startTime;
+            if (!maxDate || endTime > maxDate) maxDate = endTime; // Use endTime for max range
+
+            // Ensure other fields are strings or undefined
+            const appName =
+              row[appHeader ?? ""] != null
+                ? String(row[appHeader ?? ""])
+                : undefined;
+            const url =
+              row[urlHeader ?? ""] != null
+                ? String(row[urlHeader ?? ""])
+                : undefined;
+            const title = String(row[titleHeader ?? ""] ?? "N/A");
+            const category =
+              row[categoryHeader ?? ""] != null
+                ? String(row[categoryHeader ?? ""])
+                : undefined;
 
             const activity: Activity = {
-              id: `file-${i}`,
+              id: `csv-${i}`,
               type: activityType,
-              title:
-                titleStr ||
-                appStr ||
-                webStr ||
-                activityTypeStr ||
-                "Unknown Activity",
+              title: title,
               startTime: startTime,
               endTime: endTime,
-              durationMinutes: durationMinutes,
-              applicationName: appStr || undefined,
-              url: webStr || undefined,
-              category: catStr || undefined,
+              durationMinutes: durationMinutes, // Use calculated duration
+              applicationName: appName,
+              url: url,
+              category: category,
             };
             activities.push(activity);
           }
@@ -271,17 +214,18 @@ export async function parseActivityCsv(
             );
           }
           if (activities.length === 0) {
-            throw new Error("No valid activity rows found in the CSV file.");
+            throw new Error(
+              "No valid activity rows found or parsed in the CSV file."
+            );
           }
 
-          // Return the full list and date range
           resolve({
             activities: activities.sort(
               (a, b) => a.startTime.getTime() - b.startTime.getTime()
             ),
             startDate: startOfDay(minDate),
-            endDate: startOfDay(maxDate), // Use startOfDay for range consistency
-            totalEventCount: rawEventCount, // Return the raw count
+            endDate: startOfDay(maxDate),
+            totalEventCount: rawEventCount,
           });
         } catch (error) {
           console.error("Error processing parsed CSV data:", error);

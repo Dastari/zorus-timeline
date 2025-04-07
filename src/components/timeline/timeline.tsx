@@ -56,16 +56,75 @@ const zoomLevelToDuration: Record<ZoomLevel, number> = {
   [ZoomLevel.Day]: 1440,
 };
 
-// Minimum and Maximum zoom duration in minutes
-const MIN_DURATION_MINUTES = 15;
+// Reinstate MIN_DURATION_MINUTES
+const MIN_DURATION_MINUTES = 15; 
 const MAX_DURATION_MINUTES = 1440; // 24 hours
+
+// NEW: Helper function to draw a rounded rectangle path and fill it
+function fillRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+) {
+    // Ensure radius is not too large for the dimensions
+    radius = Math.min(radius, width / 2, height / 2);
+    // Prevent drawing if width/height is too small for the radius
+    if (width < 2 * radius || height < 2 * radius) {
+        // Fallback to sharp corners if too small
+        ctx.fillRect(x, y, width, height);
+        return;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.arcTo(x + width, y, x + width, y + radius, radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+    ctx.lineTo(x + radius, y + height);
+    ctx.arcTo(x, y + height, x, y + height - radius, radius);
+    ctx.lineTo(x, y + radius);
+    ctx.arcTo(x, y, x + radius, y, radius);
+    ctx.closePath();
+    ctx.fill(); 
+}
+
+// NEW: Helper function to draw a rounded rectangle stroke (for selection)
+function strokeRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+) {
+    radius = Math.min(radius, width / 2, height / 2);
+    if (width < 2 * radius || height < 2 * radius) {
+        ctx.strokeRect(x, y, width, height);
+        return;
+    }
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.arcTo(x + width, y, x + width, y + radius, radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+    ctx.lineTo(x + radius, y + height);
+    ctx.arcTo(x, y + height, x, y + height - radius, radius);
+    ctx.lineTo(x, y + radius);
+    ctx.arcTo(x, y, x + radius, y, radius);
+    ctx.closePath();
+    ctx.stroke();
+}
 
 export function Timeline({
   activities,
   filters,
   zoomLevel,
   selectedActivityId,
-  onZoomChange,
   className,
   currentDate,
   onActivityClick,
@@ -188,6 +247,7 @@ export function Timeline({
     const dayStart = startOfDay(currentDate);
     const pixelsPerMinute = width / durationMin;
     const viewEndMinutes = startMin + durationMin;
+    const cornerRadius = 3; // Define corner radius
 
     filteredActivities.forEach((activity) => {
       if (
@@ -228,21 +288,25 @@ export function Timeline({
       ctx.fillStyle =
         ACTIVITY_COLORS[activity.type] || ACTIVITY_COLORS[ActivityType.Other];
 
+      // Use the helper function to draw the filled rounded rectangle
+      fillRoundedRect(ctx, x, SCALE_HEIGHT, barWidth, BAR_HEIGHT, cornerRadius);
+
+      // Update selection highlight to use rounded stroke
       if (activity.id === selectedActivityId) {
         ctx.save();
-        ctx.strokeStyle = "#000000";
+        ctx.strokeStyle = "#000000"; // Keep black border
         ctx.lineWidth = 1.5;
-        // Ensure stroke doesn't make bar visually start before x
-        ctx.strokeRect(
+        // Adjust position/size slightly for stroke to appear nicely outside the fill
+        strokeRoundedRect(
+          ctx,
           x + ctx.lineWidth / 2,
           SCALE_HEIGHT + ctx.lineWidth / 2,
           barWidth - ctx.lineWidth,
-          BAR_HEIGHT - ctx.lineWidth
+          BAR_HEIGHT - ctx.lineWidth,
+          cornerRadius // Use same radius, or slightly smaller? Use same for now.
         );
         ctx.restore();
       }
-
-      ctx.fillRect(x, SCALE_HEIGHT, barWidth, BAR_HEIGHT);
     });
   };
 
@@ -301,43 +365,51 @@ export function Timeline({
     return Math.max(0, Math.min(newStart, maxStart));
   };
 
-  // --- Event Handlers - IMPLEMENTED ---
+  // --- Event Handlers ---
   const handleWheelZoom = (event: React.WheelEvent) => {
-    // Always prevent default for wheel events on the timeline
-    event.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas || !canvasWidth) return;
 
-    const scrollAmount = event.deltaY;
-    const currentDuration = viewDurationMinutes;
+    const isPan = event.shiftKey; // Check if Shift key is held
 
-    // --- Granular Zooming (Default Wheel Action) ---
-    const zoomFactor = 1.15;
-    let nextDuration =
-      scrollAmount > 0
-        ? currentDuration * zoomFactor
-        : currentDuration / zoomFactor;
-    nextDuration = Math.max(
-      MIN_DURATION_MINUTES,
-      Math.min(MAX_DURATION_MINUTES, nextDuration)
-    );
+    if (isPan) {
+      // Prevent page scroll ONLY when zooming the timeline
+      event.preventDefault();
 
-    if (Math.abs(nextDuration - currentDuration) > 1) {
-      const rect = canvas.getBoundingClientRect();
-      const mouseX = event.clientX - rect.left;
-      const pixelsPerMinute = canvasWidth / currentDuration;
-      const timeAtMousePointer = viewStartMinutes + mouseX / pixelsPerMinute;
+      // --- Zooming Logic (Activated by Shift + Wheel) ---
+      const scrollAmount = event.deltaY;
+      const currentDuration = viewDurationMinutes;
+      const zoomFactor = 1.15;
+      let nextDuration =
+        scrollAmount > 0
+          ? currentDuration * zoomFactor // Zoom out
+          : currentDuration / zoomFactor; // Zoom in
 
-      const nextPixelsPerMinute = canvasWidth / nextDuration;
-      let newViewStart = timeAtMousePointer - mouseX / nextPixelsPerMinute;
-      newViewStart = clampViewStart(newViewStart, nextDuration);
+      // Clamp duration
+      nextDuration = Math.max(
+        MIN_DURATION_MINUTES,
+        Math.min(MAX_DURATION_MINUTES, nextDuration)
+      );
 
-      setViewStartMinutes(newViewStart);
-      setViewDurationMinutes(nextDuration);
+      if (Math.abs(nextDuration - currentDuration) > 1) {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = event.clientX - rect.left;
+        const pixelsPerMinute = canvasWidth / currentDuration;
+        const timeAtMousePointer = viewStartMinutes + mouseX / pixelsPerMinute;
+
+        const nextPixelsPerMinute = canvasWidth / nextDuration;
+        let newViewStart = timeAtMousePointer - mouseX / nextPixelsPerMinute;
+        newViewStart = clampViewStart(newViewStart, nextDuration);
+
+        setViewStartMinutes(newViewStart);
+        setViewDurationMinutes(nextDuration); // Update duration state directly
+      }
+
+      // Clear tooltip when zooming
+      setHoveredActivity(null);
+      setTooltipPosition(null);
     }
-
-    setHoveredActivity(null);
-    setTooltipPosition(null);
+    // else: If Shift is not held, do nothing and allow default browser scroll
   };
 
   // --- Panning Button Handlers ---
@@ -431,7 +503,8 @@ export function Timeline({
     setHoveredActivity(activity);
 
     if (activity) {
-      setTooltipPosition({ x: event.clientX + 15, y: event.clientY + 30 });
+      // Change Y offset to negative 100px to position above cursor
+      setTooltipPosition({ x: event.clientX + 15, y: event.clientY });
     } else {
       setTooltipPosition(null);
     }
@@ -442,91 +515,112 @@ export function Timeline({
     setTooltipPosition(null);
   };
 
+  // Calculate start/end times for display
+  const viewStartTime = useMemo(
+    () => addMinutes(startOfDay(currentDate), viewStartMinutes),
+    [currentDate, viewStartMinutes]
+  );
+  const viewEndTime = useMemo(
+    () => addMinutes(viewStartTime, viewDurationMinutes),
+    [viewStartTime, viewDurationMinutes]
+  );
+
   return (
-    <TooltipProvider delayDuration={100}>
-      <div
-        ref={containerRef}
-        className={cn("w-full relative overflow-hidden", className)}
-        style={{ height: `${TOTAL_TIMELINE_HEIGHT}px` }}
-        onWheel={handleWheelZoom}
-        onMouseEnter={() => setShowPanButtons(true)} // Show buttons on enter
-        onMouseLeave={() => setShowPanButtons(false)} // Hide buttons on leave
-      >
-        <canvas
-          ref={canvasRef}
-          onClick={handleCanvasClick}
-          onMouseMove={handleCanvasMouseMove}
-          onMouseLeave={handleCanvasMouseLeave}
-          style={{
-            display: "block",
-            width: "100%",
-            height: "100%",
-            cursor: hoveredActivity ? "pointer" : "default",
-          }}
-        />
-
-        {/* Panning Buttons - Show on hover and when not fully zoomed out */}
-        {showPanButtons && viewDurationMinutes < MAX_DURATION_MINUTES && (
-          <>
-            {/* Left Pan Button */}
-            <Button
-              variant="outline"
-              size="icon"
-              className="absolute left-1 top-1/2 -translate-y-1/2 z-10 h-8 w-8 opacity-70 hover:opacity-100"
-              onClick={() => handlePan("left")}
-              disabled={viewStartMinutes <= 0} // Disable if at the beginning
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            {/* Right Pan Button */}
-            <Button
-              variant="outline"
-              size="icon"
-              className="absolute right-1 top-1/2 -translate-y-1/2 z-10 h-8 w-8 opacity-70 hover:opacity-100"
-              onClick={() => handlePan("right")}
-              disabled={viewStartMinutes >= 1440 - viewDurationMinutes} // Disable if at the end
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </>
-        )}
-
-        {hoveredActivity && tooltipPosition && (
-          <Tooltip open={true}>
-            {/* Position the trigger element at the desired tooltip location */}
-            <TooltipTrigger
-              style={{
-                position: "fixed",
-                left: `${tooltipPosition.x}px`,
-                top: `${tooltipPosition.y}px`,
-                width: 0,
-                height: 0,
-                pointerEvents: "none",
-              }}
-            />
-            <TooltipContent side="top" align="start">
-              <p className="font-medium">{hoveredActivity.title}</p>
-              <p className="text-sm text-muted-foreground">
-                {format(hoveredActivity.startTime, "h:mm:ss a")} -{" "}
-                {format(hoveredActivity.endTime, "h:mm:ss a")}
-              </p>
-              <p className="text-xs">
-                Duration: {hoveredActivity.durationMinutes} min
-              </p>
-              <p className="text-xs">Type: {hoveredActivity.type}</p>
-              {hoveredActivity.applicationName && (
-                <p className="text-xs">
-                  App: {hoveredActivity.applicationName}
-                </p>
-              )}
-              {hoveredActivity.url && (
-                <p className="text-xs">URL: {hoveredActivity.url}</p>
-              )}
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {/* TODO: Add a visual scrollbar element absolutely positioned */}
+    <div className={cn("flex flex-col", className)}>
+      <div className="mb-2 px-1">
+        <h3 className="text-lg font-semibold">
+          {format(viewStartTime, "MMMM do, yyyy")} (
+          {format(viewStartTime, "h:mm a")} - {format(viewEndTime, "h:mm a")})
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          Hold Shift + Scroll Wheel to pan horizontally. Use zoom buttons above
+          for preset views.
+        </p>
       </div>
-    </TooltipProvider>
+
+      <TooltipProvider delayDuration={100}>
+        <div
+          ref={containerRef}
+          className={cn("w-full relative overflow-hidden")}
+          style={{
+            height: `${TOTAL_TIMELINE_HEIGHT}px`,
+            overscrollBehavior: "contain",
+          }}
+          onWheel={handleWheelZoom}
+          onMouseEnter={() => setShowPanButtons(true)}
+          onMouseLeave={() => setShowPanButtons(false)}
+        >
+          <canvas
+            ref={canvasRef}
+            onClick={handleCanvasClick}
+            onMouseMove={handleCanvasMouseMove}
+            onMouseLeave={handleCanvasMouseLeave}
+            style={{
+              display: "block",
+              width: "100%",
+              height: "100%",
+              cursor: hoveredActivity ? "pointer" : "default",
+            }}
+          />
+
+          {showPanButtons && viewDurationMinutes < MAX_DURATION_MINUTES && (
+            <>
+              <Button
+                variant="outline"
+                size="icon"
+                className="absolute left-1 top-14 -translate-y-1/2 z-10 h-8 w-8 opacity-70 hover:opacity-100"
+                onClick={() => handlePan("left")}
+                disabled={viewStartMinutes <= 0}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="absolute right-1 top-14 -translate-y-1/2 z-10 h-8 w-8 opacity-70 hover:opacity-100"
+                onClick={() => handlePan("right")}
+                disabled={viewStartMinutes >= 1440 - viewDurationMinutes}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+
+          {hoveredActivity && tooltipPosition && (
+            <Tooltip open={true}>
+              <TooltipTrigger
+                style={{
+                  position: "fixed",
+                  left: `${tooltipPosition.x}px`,
+                  top: `${tooltipPosition.y}px`,
+                  width: 0,
+                  height: 0,
+                  pointerEvents: "none",
+                }}
+              />
+              <TooltipContent side="top" align="start">
+                <p className="font-medium">{hoveredActivity.title}</p>
+                <p className="text-sm text-muted-foreground">
+                  {format(hoveredActivity.startTime, "h:mm:ss a")} -{" "}
+                  {format(hoveredActivity.endTime, "h:mm:ss a")}
+                </p>
+                <p className="text-xs">
+                  Duration: {hoveredActivity.durationMinutes} min
+                </p>
+                <p className="text-xs">Type: {hoveredActivity.type}</p>
+                {hoveredActivity.applicationName && (
+                  <p className="text-xs">
+                    App: {hoveredActivity.applicationName}
+                  </p>
+                )}
+                {hoveredActivity.url && (
+                  <p className="text-xs">URL: {hoveredActivity.url}</p>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      </TooltipProvider>
+    </div>
   );
 }
