@@ -1,0 +1,17 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  nextjs-app: # Service name
+    build:
+      context: . # Use the Dockerfile in the current directory
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000" # Map host port 3000 to container port 3000
+    environment:
+      # Ensure the container uses the correct port (redundant with Dockerfile ENV, but good practice)
+      PORT: 3000
+      # Ensure Next.js runs in production mode (redundant with Dockerfile ENV, but good practice)
+      NODE_ENV: production
+    # Optional: Add restart policy if desired
+    # restart: unless-stopped

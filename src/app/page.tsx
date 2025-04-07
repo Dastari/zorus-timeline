@@ -1,7 +1,5 @@
 "use client";
-
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
 import {
   startOfDay,
   format,
@@ -34,6 +32,7 @@ import { parseActivityCsv /* REMOVED ParsedCsvData */ } from "@/lib/csv-parser";
 import { TimelineData, FilterState, ZoomLevel, Activity } from "@/types";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 
 // Define type for summary state
 interface CsvSummary {
@@ -44,7 +43,6 @@ interface CsvSummary {
 }
 
 export default function DashboardPage() {
-  // --- URL and Search Params ---
   const searchParams = useSearchParams();
 
   // --- Core State ---
@@ -385,12 +383,12 @@ export default function DashboardPage() {
                 {format(selectedDate, "PPP")}
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-4 flex-grow justify-end">
+            {/* <div className="flex flex-wrap items-center gap-4 flex-grow justify-end">
               <ExportControls
                 timelineData={currentTimelineData}
                 disabled={!currentTimelineData || isLoading}
               />
-            </div>
+            </div> */}
           </div>
 
           {/* Daily User Summary */}
