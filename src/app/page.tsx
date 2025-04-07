@@ -194,6 +194,19 @@ export default function DashboardPage() {
     }
   };
 
+  // NEW: Handler to unload CSV data
+  const handleUnloadCsv = () => {
+    setIsFileData(false);
+    setAllParsedActivities([]);
+    setFileDateRange(null);
+    setCsvSummary(null);
+    // Reset date/selection or trigger API fetch? For now, just clear.
+    // Maybe reset date to today?
+    setSelectedDate(startOfDay(new Date()));
+    // Reset selected endpoint/customer? Let's leave them for now.
+    // If selectedEndpoint is set, the useEffect will trigger API fetch.
+  };
+
   // --- Derived State: Filter activities for the selected day ---
   const activitiesForSelectedDay = useMemo(() => {
     return allParsedActivities.filter((act) =>
@@ -312,59 +325,86 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Top Row: Selectors & File Upload */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-        <div>
-          <label className="text-sm font-medium mb-1 block">Customer</label>
+      <div className="flex flex-wrap items-end gap-4">
+        {/* Customer Selector */}
+        <div className="flex-1 min-w-[200px]">
+          <label
+            htmlFor="customer-select"
+            className="block text-sm font-medium mb-1"
+          >
+            Customer
+          </label>
           <CustomerSelector
-            onSelectCustomer={handleCustomerSelect}
             selectedCustomerId={selectedCustomer?.uuid}
-            disabled={isFileData || isLoading}
+            onSelectCustomer={handleCustomerSelect}
+            disabled={isLoading || isFileData}
           />
         </div>
-        <div>
-          <label className="text-sm font-medium mb-1 block">Endpoint</label>
+        {/* Endpoint Selector */}
+        <div className="flex-1 min-w-[200px]">
+          <label
+            htmlFor="endpoint-select"
+            className="block text-sm font-medium mb-1"
+          >
+            Endpoint
+          </label>
           <EndpointSelector
-            customerId={selectedCustomer?.uuid ?? ""}
-            onSelectEndpoint={handleEndpointSelect}
+            customerId={selectedCustomer ? selectedCustomer.uuid : ""}
             selectedEndpointId={selectedEndpoint?.uuid}
-            disabled={!selectedCustomer || isFileData || isLoading}
+            onSelectEndpoint={handleEndpointSelect}
+            disabled={!selectedCustomer || isLoading || isFileData}
           />
         </div>
-        <div className="flex items-center justify-center md:justify-start border-t md:border-none pt-4 md:pt-0">
-          <span className="text-sm text-muted-foreground mr-2 md:hidden lg:inline">
-            OR
-          </span>
-          <FileUpload onFileSelect={handleFileLoad} disabled={isLoading} />
+
+        <div className="text-center text-sm text-muted-foreground mx-2 self-center">
+          OR
+        </div>
+
+        {/* File Upload / Unload Area */}
+        <div className="flex items-center gap-2">
+          <FileUpload
+            onFileSelect={handleFileLoad}
+            disabled={isLoading || isFileData}
+            className="self-end"
+          />
+          {isFileData && (
+            <Button
+              onClick={handleUnloadCsv}
+              disabled={isLoading}
+              className="self-end"
+            >
+              Unload CSV
+            </Button>
+          )}
         </div>
       </div>
 
       <hr className="my-2 border-border" />
 
-      {/* NEW: CSV Summary Display Area */}
-      {isFileData && csvSummary && (
-        <div className="p-4 border rounded-lg bg-card text-sm mb-4">
-          <h3 className="font-semibold mb-2">CSV File Summary</h3>
-          <p>
-            <span className="font-medium">File Name:</span>{" "}
-            {csvSummary.loadedFileName}
-          </p>
-          <p>
-            <span className="font-medium">Date Range:</span>{" "}
-            {format(csvSummary.startDate, "PPP")} to{" "}
-            {format(csvSummary.endDate, "PPP")}
-          </p>
-          <p>
-            <span className="font-medium">Total Events Found:</span>{" "}
-            {csvSummary.totalEventCount}
-          </p>
-          {/* Add lines for unique users/machines here if data becomes available */}
-        </div>
-      )}
-
-      {/* Timeline Area (Show if file data OR endpoint is selected) */}
+      {/* Timeline Area */}
       {isFileData || (selectedCustomer && selectedEndpoint) ? (
         <div className="flex flex-col gap-6">
-          {/* Row 1: Controls (Disable DatePicker if file data?) */}
+          {/* CSV Summary HERE */}
+          {isFileData && csvSummary && (
+            <div className="p-4 border rounded-lg bg-card text-sm mb-4">
+              <h3 className="font-semibold mb-2">CSV File Summary</h3>
+              <p>
+                <span className="font-medium">File Name:</span>{" "}
+                {csvSummary.loadedFileName}
+              </p>
+              <p>
+                <span className="font-medium">Date Range:</span>{" "}
+                {format(csvSummary.startDate, "PPP")} to{" "}
+                {format(csvSummary.endDate, "PPP")}
+              </p>
+              <p>
+                <span className="font-medium">Total Events Found:</span>{" "}
+                {csvSummary.totalEventCount}
+              </p>
+            </div>
+          )}
+
+          {/* Row 1: Controls */}
           <div className="flex flex-wrap items-center gap-4 border-b pb-4">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-1 rounded-md border p-1">
@@ -413,8 +453,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Row 2: Main Timeline & Minimap */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Row 2: Main Timeline */}
+          <div className="grid grid-cols-1 gap-6">
             <div className="lg:col-span-4 border rounded-lg p-4 bg-card min-h-[150px]">
               {isLoading && (
                 <div className="text-center p-4">Loading data...</div>
@@ -458,6 +498,8 @@ export default function DashboardPage() {
                 )}
             </div>
           </div>
+
+          {/* Restore Activity Details */}
           <ActivityDetails
             activity={selectedActivity}
             onClose={handleCloseDetails}
@@ -477,7 +519,6 @@ export default function DashboardPage() {
               </div>
               {/* Row 3b: Activity Type Breakdown */}
               <div className="mt-6">
-                {/* Can optionally center it or limit width */}
                 <div className="max-w-md mx-auto">
                   <ActivityTypeBreakdownChart
                     activities={currentTimelineData.activities}
@@ -488,14 +529,8 @@ export default function DashboardPage() {
           )}
         </div>
       ) : (
-        <div className="flex items-center justify-center h-64 border rounded-lg bg-muted/50">
-          <p className="text-muted-foreground">
-            {isLoading
-              ? "Loading..."
-              : selectedCustomer
-              ? "Please select an endpoint."
-              : "Please select a customer or load a file."}
-          </p>
+        <div className="text-center p-8 text-muted-foreground">
+          Select a Customer and Endpoint, or load a CSV file to view activity.
         </div>
       )}
     </div>

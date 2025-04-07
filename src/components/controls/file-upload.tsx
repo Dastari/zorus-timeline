@@ -47,7 +47,7 @@ export function FileUpload({
       <Button
         onClick={handleButtonClick}
         variant="outline"
-        size="sm"
+        size="default"
         disabled={disabled}
       >
         <Upload className="mr-2 h-4 w-4" />
