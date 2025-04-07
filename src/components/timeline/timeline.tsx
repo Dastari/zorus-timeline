@@ -19,12 +19,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
+// Import the controls components
+import { ActivityFilters } from "./activity-filters"; 
+import { ZoomControls } from "./zoom-controls";
+
 interface TimelineProps {
   activities: Activity[];
   filters: FilterState;
+  onFilterChange: (key: keyof FilterState, value: boolean) => void;
   zoomLevel: ZoomLevel;
-  selectedActivityId: string | null;
   onZoomChange: (level: ZoomLevel) => void;
+  selectedActivityId: string | null;
   className?: string;
   currentDate: Date;
   onActivityClick: (activity: Activity | null) => void;
@@ -121,35 +126,32 @@ function strokeRoundedRect(
 export function Timeline({
   activities,
   filters,
+  onFilterChange,
   zoomLevel,
+  onZoomChange,
   selectedActivityId,
   className,
   currentDate,
   onActivityClick,
 }: TimelineProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null); // Ref for the container div to get width
+  const containerRef = useRef<HTMLDivElement>(null);
   const [canvasWidth, setCanvasWidth] = useState(0);
-
-  // State for the visible time window
   const [viewStartMinutes, setViewStartMinutes] = useState(0);
   const [viewDurationMinutes, setViewDurationMinutes] = useState(
-    () => zoomLevelToDuration[zoomLevel] || 1440 // Initialize from prop
+    () => zoomLevelToDuration[zoomLevel] || 1440
   );
-
-  // NEW: State for hover/tooltip
   const [hoveredActivity, setHoveredActivity] = useState<Activity | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{
     x: number;
     y: number;
   } | null>(null);
-
-  const [showPanButtons, setShowPanButtons] = useState(false); // State for button visibility
+  const [showPanButtons, setShowPanButtons] = useState(false);
 
   // Filter activities based on the current filter state
   const filteredActivities = useMemo(() => {
     const activeFilterTypes = Object.entries(filters)
-      .filter((entry) => entry[1] === true)
+      .filter(([, value]) => value === true)
       .map(([key]) => filterTypeMap[key as keyof FilterState]);
     return activities.filter((activity) =>
       activeFilterTypes.includes(activity.type)
@@ -161,8 +163,7 @@ export function Timeline({
     const newDuration = zoomLevelToDuration[zoomLevel] || 1440;
     setViewDurationMinutes(newDuration);
     setViewStartMinutes((prev) => clampViewStart(prev, newDuration));
-    // Add clampViewStart to dependency array if it's not stable (it should be)
-  }, [zoomLevel]); // Keep dependency on zoomLevel prop
+  }, [zoomLevel]);
 
   // Function to draw the timeline scale - MODIFIED
   const drawScale = (
@@ -413,11 +414,14 @@ export function Timeline({
 
   // --- Panning Button Handlers ---
   const handlePan = (direction: "left" | "right") => {
-    const panAmount = viewDurationMinutes * 0.1; // Pan 10% of the current view
-    const change = direction === "left" ? -panAmount : panAmount;
-    setViewStartMinutes((prev) =>
-      clampViewStart(prev + change, viewDurationMinutes)
-    );
+    const panAmountMinutes = viewDurationMinutes * 0.2; // Pan by 20% of visible duration
+    setViewStartMinutes((prev) => {
+      const newStart =
+        direction === "left"
+          ? prev - panAmountMinutes
+          : prev + panAmountMinutes;
+      return clampViewStart(newStart, viewDurationMinutes);
+    });
   };
 
   // --- Hit Detection Logic ---
@@ -532,8 +536,7 @@ export function Timeline({
           {format(viewStartTime, "h:mm a")} - {format(viewEndTime, "h:mm a")})
         </h3>
         <p className="text-xs text-muted-foreground">
-          Hold Shift + Scroll Wheel to pan horizontally. Use zoom buttons above
-          for preset views.
+          Hold Shift + Scroll Wheel Zoom or use the presets below
         </p>
       </div>
 
@@ -620,6 +623,11 @@ export function Timeline({
           )}
         </div>
       </TooltipProvider>
+
+      <div className="flex justify-between items-center mt-2 px-2 py-1">
+        <ActivityFilters filters={filters} onFilterChange={onFilterChange} />
+        <ZoomControls zoomLevel={zoomLevel} onZoomChange={onZoomChange} />
+      </div>
     </div>
   );
 }

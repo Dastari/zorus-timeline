@@ -67,9 +67,7 @@ export function DailyUserSummary({
     const summaries = Object.entries(userIntervals).map(
       ([username, intervals]) => {
         const merged = mergeIntervals(intervals);
-
         const totalMinutes = calculateTotalDuration(merged);
-
         return {
           username,
           totalActiveMinutes: totalMinutes,
@@ -83,10 +81,6 @@ export function DailyUserSummary({
     );
   }, [activities]);
 
-  if (!activities || activities.length === 0 || userSummaries.length === 0) {
-    return null;
-  }
-
   return (
     <Card className={cn("py-0 gap-0 bg-slate-950 text-white", className)}>
       <CardHeader className="p-4 pb-0">
@@ -95,24 +89,30 @@ export function DailyUserSummary({
           Daily User Summaries
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-4 pt-0">
-        {userSummaries.map((summary) => (
-          <div
-            key={summary.username}
-            className="flex items-center text-sm justify-between"
-          >
-            <div className="flex items-center">
-              <User className="h-4 w-4 mr-2 text-white" />
-              <span>{summary.username}</span>
+      <CardContent className="p-4 pt-2 text-sm">
+        {userSummaries.length > 0 ? (
+          userSummaries.map((summary) => (
+            <div
+              key={summary.username}
+              className="flex items-center justify-between py-1"
+            >
+              <div className="flex items-center">
+                <User className="h-4 w-4 mr-2 text-white" />
+                <span>{summary.username}</span>
+              </div>
+              <div className="flex items-center">
+                <Clock className="h-4 w-4 mr-1 text-white" />
+                <span className="font-semibold">
+                  {formatDuration(summary.totalActiveMinutes)}
+                </span>
+              </div>
             </div>
-            <div className="flex items-center">
-              <Clock className="h-4 w-4 mr-1 text-white" />
-              <span className="font-semibold">
-                {formatDuration(summary.totalActiveMinutes)}
-              </span>
-            </div>
-          </div>
-        ))}
+          ))
+        ) : (
+          <p className="text-muted-foreground italic py-1">
+            No user activity data for this day.
+          </p>
+        )}
       </CardContent>
     </Card>
   );

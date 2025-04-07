@@ -1,6 +1,7 @@
-"use client"; // This page now needs client-side interactivity
+"use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   startOfDay,
   format,
@@ -11,15 +12,12 @@ import {
   isAfter,
 } from "date-fns";
 
-// Selectors
-import { CustomerSelector } from "@/components/selectors/customer-selector";
-import { EndpointSelector } from "@/components/selectors/endpoint-selector";
+// REMOVED Customer/Endpoint Selectors
 import { FileUpload } from "@/components/controls/file-upload";
+import { Input } from "@/components/ui/input";
 
 // Timeline Components
 import { DatePicker } from "@/components/timeline/date-picker";
-import { ActivityFilters } from "@/components/timeline/activity-filters";
-import { ZoomControls } from "@/components/timeline/zoom-controls";
 import { Timeline } from "@/components/timeline/timeline";
 import { ExportControls } from "@/components/timeline/export-controls";
 import { ActivityDetails } from "@/components/activity/activity-details";
@@ -32,16 +30,8 @@ import { HourlyTimelineBreakdown } from "@/components/timeline/hourly-timeline-b
 import { DailyUserSummary } from "@/components/timeline/daily-user-summary";
 
 // Services & Types
-import { getActivities } from "@/services/activity-service";
-import { parseActivityCsv, ParsedCsvData } from "@/lib/csv-parser";
-import {
-  Customer,
-  Endpoint,
-  TimelineData,
-  FilterState,
-  ZoomLevel,
-  Activity,
-} from "@/types";
+import { parseActivityCsv /* REMOVED ParsedCsvData */ } from "@/lib/csv-parser";
+import { TimelineData, FilterState, ZoomLevel, Activity } from "@/types";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -50,22 +40,25 @@ interface CsvSummary {
   startDate: Date;
   endDate: Date;
   totalEventCount: number;
-  loadedFileName: string;
+  source: string;
 }
 
-/**
- * Main single-page dashboard application.
- */
 export default function DashboardPage() {
-  // --- Selection State ---
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
-    null
-  );
-  const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(
-    null
-  );
+  // --- URL and Search Params ---
+  const searchParams = useSearchParams();
 
-  // --- Timeline State ---
+  // --- Core State ---
+  const [allParsedActivities, setAllParsedActivities] = useState<Activity[]>(
+    []
+  );
+  const [csvUrl, setCsvUrl] = useState<string>("");
+  const [csvSummary, setCsvSummary] = useState<CsvSummary | null>(null);
+  const [fileDateRange, setFileDateRange] = useState<{
+    start: Date;
+    end: Date;
+  } | null>(null);
+
+  // --- UI / Timeline State ---
   const [selectedDate, setSelectedDate] = useState<Date>(
     startOfDay(new Date())
   );
@@ -82,322 +75,283 @@ export default function DashboardPage() {
     null
   );
 
-  // --- File Data State ---
-  const [isFileData, setIsFileData] = useState(false);
-  const [allParsedActivities, setAllParsedActivities] = useState<Activity[]>(
+  // --- Data Processing Logic ---
+  const processCsvData = useCallback(
+    (csvString: string, sourceName: string) => {
+      setIsLoading(true);
+      setError(null);
+      setAllParsedActivities([]);
+      setFileDateRange(null);
+      setCsvSummary(null);
+
+      parseActivityCsv(csvString)
+        .then((parsedResult) => {
+          setAllParsedActivities(parsedResult.activities);
+          const fileRange = {
+            start: parsedResult.startDate,
+            end: parsedResult.endDate,
+          };
+          setFileDateRange(fileRange);
+          setCsvSummary({
+            startDate: parsedResult.startDate,
+            endDate: parsedResult.endDate,
+            totalEventCount: parsedResult.totalEventCount,
+            source: sourceName,
+          });
+          setSelectedDate(startOfDay(parsedResult.endDate));
+          setError(null);
+        })
+        .catch((err) => {
+          console.error("Error processing CSV data:", err);
+          setError(
+            err instanceof Error ? err.message : "Failed to parse CSV data."
+          );
+          setAllParsedActivities([]);
+          setFileDateRange(null);
+          setCsvSummary(null);
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    },
     []
   );
-  const [fileDateRange, setFileDateRange] = useState<{
-    start: Date;
-    end: Date;
-  } | null>(null);
-  const [csvSummary, setCsvSummary] = useState<CsvSummary | null>(null);
 
-  // --- Data Fetching ---
-  const fetchActivitiesFromApi = useCallback(async () => {
-    if (
-      isFileData ||
-      !selectedEndpoint ||
-      !selectedEndpoint.lastLoggedOnUserUuid
-    ) {
-      if (!isFileData) {
-        setError(
-          selectedEndpoint
-            ? "Selected endpoint has no associated user ID."
-            : null
-        );
+  // --- Event Handlers ---
+
+  const handleLoadFromUrl = useCallback(
+    async (urlOverride?: string) => {
+      const urlToLoad = urlOverride || csvUrl;
+      if (!urlToLoad) {
+        setError("Please enter a URL.");
+        return;
       }
-      setIsLoading(false);
-      setFileDateRange(null);
-      setCsvSummary(null);
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    setFileDateRange(null);
-    setCsvSummary(null);
-    try {
-      const data = await getActivities(
-        selectedEndpoint.lastLoggedOnUserUuid,
-        selectedDate
-      );
-      setAllParsedActivities(data.activities || []);
-      setFileDateRange({
-        start: startOfDay(selectedDate),
-        end: startOfDay(selectedDate),
-      });
-      setCsvSummary({
-        startDate: startOfDay(selectedDate),
-        endDate: startOfDay(selectedDate),
-        totalEventCount: data.activities?.length || 0,
-        loadedFileName: data.username,
-      });
-    } catch (err) {
-      console.error("Failed to fetch activities:", err);
-      setError(err instanceof Error ? err.message : "API fetch error");
+      console.log(`Attempting to load CSV from URL: ${urlToLoad}`);
+      setIsLoading(true);
+      setError(null);
       setAllParsedActivities([]);
       setFileDateRange(null);
       setCsvSummary(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [selectedEndpoint, selectedDate, isFileData]);
 
-  useEffect(() => {
-    if (!isFileData) {
-      fetchActivitiesFromApi();
-    }
-  }, [fetchActivitiesFromApi, isFileData]);
+      try {
+        const response = await fetch(urlToLoad);
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch CSV: ${response.status} ${response.statusText}`
+          );
+        }
+        const csvString = await response.text();
+        console.log(`Successfully fetched ${csvString.length} characters.`);
+        processCsvData(csvString, urlToLoad);
+      } catch (err) {
+        console.error("Failed to load from URL:", err);
+        setError(
+          err instanceof Error ? err.message : "Failed to load data from URL."
+        );
+        setIsLoading(false);
+      }
+    },
+    [csvUrl, processCsvData]
+  );
 
-  // --- File Loading Handler ---
-  const handleFileLoad = async (file: File) => {
-    setIsLoading(true);
-    setError(null);
-    setAllParsedActivities([]);
-    setFileDateRange(null);
-    setCsvSummary(null);
-
-    try {
+  const handleFileLoad = useCallback(
+    async (file: File) => {
+      console.log(`Processing local file: ${file.name}`);
       const csvString = await file.text();
-      const parsedResult: ParsedCsvData = await parseActivityCsv(csvString);
+      processCsvData(csvString, file.name);
+    },
+    [processCsvData]
+  );
 
-      setAllParsedActivities(parsedResult.activities);
-      const fileRange = {
-        start: parsedResult.startDate,
-        end: parsedResult.endDate,
-      };
-      setFileDateRange(fileRange);
-      setCsvSummary({
-        startDate: parsedResult.startDate,
-        endDate: parsedResult.endDate,
-        totalEventCount: parsedResult.totalEventCount,
-        loadedFileName: file.name,
-      });
-
-      // Set the selected date to the *end* date from the CSV
-      setSelectedDate(startOfDay(parsedResult.endDate));
-      setIsFileData(true);
-    } catch (err) {
-      console.error("Error processing file:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to load data from file."
-      );
-      setIsFileData(false);
-      setAllParsedActivities([]);
-      setFileDateRange(null);
-      setCsvSummary(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // NEW: Handler to unload CSV data
-  const handleUnloadCsv = () => {
-    setIsFileData(false);
+  const handleUnloadCsv = useCallback(() => {
+    console.log("Unloading CSV data and clearing URL parameter.");
+    // Clear application state
     setAllParsedActivities([]);
     setFileDateRange(null);
     setCsvSummary(null);
-    // Reset date/selection or trigger API fetch? For now, just clear.
-    // Maybe reset date to today?
+    setCsvUrl("");
     setSelectedDate(startOfDay(new Date()));
-    // Reset selected endpoint/customer? Let's leave them for now.
-    // If selectedEndpoint is set, the useEffect will trigger API fetch.
-  };
+    setError(null);
+    setIsLoading(false); // Ensure loading state is reset if unload is clicked during load
 
-  // --- Derived State: TimelineData object for components ---
+    // Clear the URL query parameter without reloading
+    if (typeof window !== "undefined") {
+      // Ensure this runs only client-side
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.delete("url");
+      window.history.pushState({}, "", currentUrl.toString());
+    }
+  }, []); // No dependencies needed
+
+  // --- Effect for Initial Load from Query Parameter ---
+  useEffect(() => {
+    const urlParam = searchParams?.get("url");
+    if (urlParam) {
+      console.log(`Query Param Check: Found URL parameter: ${urlParam}`);
+      if (!isLoading && csvSummary?.source !== urlParam) {
+        console.log(`Query Param Load: Triggering load for ${urlParam}`);
+        setCsvUrl(urlParam);
+        handleLoadFromUrl(urlParam);
+      } else {
+        console.log(
+          `Query Param Check: Skipping load for ${urlParam} (already loaded/loading/matches current?)`
+        );
+        if (urlParam !== csvUrl) {
+          setCsvUrl(urlParam);
+        }
+      }
+    } else {
+      console.log("Query Param Check: No URL parameter found.");
+    }
+    // This effect should run only once when searchParams are initially available
+    // or if they somehow change during the session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // --- Derived State: TimelineData ---
   const currentTimelineData: TimelineData | null = useMemo(() => {
-    // Filter activities directly inside this memo
     const activitiesForSelectedDay = allParsedActivities.filter((act) =>
       isSameDay(act.startTime, selectedDate)
     );
 
-    const userId = isFileData
-      ? "file-user"
-      : selectedEndpoint?.lastLoggedOnUserUuid ?? "";
-    const username = isFileData
-      ? csvSummary?.loadedFileName ?? "File Data"
-      : selectedEndpoint?.name ?? "Endpoint";
+    const sourceId = csvSummary?.source || "csv-data";
 
-    if (!userId) return null;
+    if (allParsedActivities.length === 0) return null;
 
     return {
       date: selectedDate,
-      activities: activitiesForSelectedDay, // Use the locally filtered array
-      userId: userId,
-      username: username,
+      activities: activitiesForSelectedDay,
+      userId: sourceId,
+      username: sourceId,
     };
-  }, [
-    selectedDate, // Ensure dependency on selectedDate
-    allParsedActivities, // Ensure dependency on the source data
-    isFileData,
-    selectedEndpoint,
-    csvSummary,
-  ]);
+  }, [selectedDate, allParsedActivities, csvSummary?.source]);
 
-  // NEW: Derive dates with events for calendar highlighting
+  // --- Derived State: Dates with Events ---
   const datesWithEvents = useMemo(() => {
-    const uniqueDates = new Set<number>(); // Store time values for uniqueness
+    const uniqueDates = new Set<number>();
     allParsedActivities.forEach((act) => {
       uniqueDates.add(startOfDay(act.startTime).getTime());
     });
     return Array.from(uniqueDates).map((time) => new Date(time));
   }, [allParsedActivities]);
 
-  // --- Event Handlers ---
-  const handleCustomerSelect = (customer: Customer | null) => {
-    if (customer?.uuid !== selectedCustomer?.uuid) {
-      setSelectedCustomer(customer);
-      setSelectedEndpoint(null);
-      setAllParsedActivities([]);
-      setFileDateRange(null);
-    }
-  };
+  // --- Memoized Event Handlers for Timeline/Date Nav ---
+  const handleDateChange = useCallback(
+    (date: Date | undefined) => {
+      if (date && date.getTime() !== selectedDate.getTime()) {
+        setSelectedDate(startOfDay(date));
+        setSelectedActivity(null);
+      }
+    },
+    [selectedDate]
+  );
 
-  const handleEndpointSelect = (endpoint: Endpoint | null) => {
-    if (endpoint?.uuid !== selectedEndpoint?.uuid) {
-      setSelectedEndpoint(endpoint);
-      setAllParsedActivities([]);
-      setFileDateRange(null);
-    }
-  };
+  const handleFilterChange = useCallback(
+    (key: keyof FilterState, value: boolean) => {
+      setFilters((prev) => ({ ...prev, [key]: value }));
+    },
+    []
+  );
 
-  const handleDateChange = (date: Date | undefined) => {
-    if (date && date.getTime() !== selectedDate.getTime()) {
-      setSelectedDate(startOfDay(date));
-    }
-  };
-
-  const handleFilterChange = (key: keyof FilterState, value: boolean) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const handleZoomChange = (level: ZoomLevel) => {
+  const handleZoomChange = useCallback((level: ZoomLevel) => {
     console.log("Zoom changed to:", level);
     setZoomLevel(level);
-  };
+  }, []);
 
-  const handleActivityClick = (activity: Activity | null) => {
+  const handleActivityClick = useCallback((activity: Activity | null) => {
     setSelectedActivity(activity);
-  };
-  const handleCloseDetails = () => setSelectedActivity(null);
+  }, []);
 
-  // Date Navigation
-  const handlePreviousDay = () => {
+  const handleCloseDetails = useCallback(() => {
+    setSelectedActivity(null);
+  }, []);
+
+  const handlePreviousDay = useCallback(() => {
     const prevDay = subDays(selectedDate, 1);
-    if (isFileData && fileDateRange && isBefore(prevDay, fileDateRange.start)) {
+    if (fileDateRange && isBefore(prevDay, fileDateRange.start)) {
       return;
     }
     setSelectedDate(prevDay);
-  };
-  const handleNextDay = () => {
+    setSelectedActivity(null);
+  }, [selectedDate, fileDateRange]);
+
+  const handleNextDay = useCallback(() => {
     const nextDay = addDays(selectedDate, 1);
-    if (isFileData && fileDateRange && isAfter(nextDay, fileDateRange.end)) {
+    if (fileDateRange && isAfter(nextDay, fileDateRange.end)) {
       return;
     }
     setSelectedDate(nextDay);
-  };
+    setSelectedActivity(null);
+  }, [selectedDate, fileDateRange]);
 
-  // Determine disabled state for date navigation
+  // --- Derived State for Navigation Buttons ---
   const canGoPrev =
-    !isFileData ||
-    !fileDateRange ||
-    !isSameDay(selectedDate, fileDateRange.start);
+    !fileDateRange || !isSameDay(selectedDate, fileDateRange.start);
   const canGoNext =
-    !isFileData ||
-    !fileDateRange ||
-    !isSameDay(selectedDate, fileDateRange.end);
-  // && !isSameDay(selectedDate, startOfDay(new Date())); // Optional: Prevent going to future
-  // Update timelineTitle to use csvSummary
-  const timelineTitle = isFileData
-    ? "Timeline Activity" // Changed from showing filename
-    : selectedEndpoint
-    ? `Activity for ${currentTimelineData?.username ?? "user"} on endpoint ${
-        selectedEndpoint.name
-      }`
-    : "Select Customer/Endpoint or Load File";
+    !fileDateRange || !isSameDay(selectedDate, fileDateRange.end);
+
+  // --- Timeline Title ---
+  const timelineTitle = csvSummary?.source
+    ? `Timeline Activity (${csvSummary.source})`
+    : "Load CSV Data";
 
   // --- Rendering Logic ---
   return (
     <div className="flex flex-col gap-6">
-      {/* Top Row: Selectors & File Upload */}
+      {/* Top Row: Load Controls */}
       <div className="flex flex-wrap items-end gap-4 p-4 border rounded-md bg-white shadow-md">
-        {/* Customer Selector */}
-        <div className="flex-1 min-w-[200px]">
+        {/* URL Input */}
+        <div className="flex-1 min-w-[300px]">
           <label
-            htmlFor="customer-select"
+            htmlFor="csv-url-input"
             className="block text-sm font-medium mb-1"
           >
-            Customer
+            Load CSV from URL
           </label>
-          <CustomerSelector
-            selectedCustomerId={selectedCustomer?.uuid}
-            onSelectCustomer={handleCustomerSelect}
-            disabled={isLoading || isFileData}
+          <Input
+            id="csv-url-input"
+            type="url"
+            placeholder="https://.../data.csv"
+            value={csvUrl}
+            onChange={(e) => setCsvUrl(e.target.value)}
+            disabled={isLoading}
           />
         </div>
-        {/* Endpoint Selector */}
-        <div className="flex-1 min-w-[200px]">
-          <label
-            htmlFor="endpoint-select"
-            className="block text-sm font-medium mb-1"
-          >
-            Endpoint
-          </label>
-          <EndpointSelector
-            customerId={selectedCustomer ? selectedCustomer.uuid : ""}
-            selectedEndpointId={selectedEndpoint?.uuid}
-            onSelectEndpoint={handleEndpointSelect}
-            disabled={!selectedCustomer || isLoading || isFileData}
-          />
-        </div>
+        <Button
+          onClick={() => handleLoadFromUrl()}
+          disabled={isLoading || !csvUrl}
+        >
+          Load from URL
+        </Button>
 
         <div className="text-center text-sm text-muted-foreground mx-2 self-center">
           OR
         </div>
 
-        {/* File Upload / Unload Area */}
+        {/* Local File Upload */}
         <div className="flex items-center gap-2">
           <FileUpload
             onFileSelect={handleFileLoad}
-            disabled={isLoading || isFileData}
+            disabled={isLoading}
             className="self-end"
           />
-          {isFileData && (
+          {(allParsedActivities.length > 0 || csvSummary) && (
             <Button
               onClick={handleUnloadCsv}
               disabled={isLoading}
               className="self-end"
+              variant="secondary"
             >
-              Unload CSV
+              Unload Data
             </Button>
           )}
         </div>
       </div>
-      {/* Timeline Area */}
-      {isFileData || (selectedCustomer && selectedEndpoint) ? (
-        <div className="flex flex-col gap-6">
-          {/* CSV Summary HERE */}
-          {isFileData && csvSummary && (
-            <div className="p-4 border rounded-lg bg-card text-sm mb-4 hidden">
-              <h3 className="font-semibold mb-2">CSV File Summary</h3>
-              <p>
-                <span className="font-medium">File Name:</span>{" "}
-                {csvSummary.loadedFileName}
-              </p>
-              <p>
-                <span className="font-medium">Date Range:</span>{" "}
-                {format(csvSummary.startDate, "PPP")} to{" "}
-                {format(csvSummary.endDate, "PPP")}
-              </p>
-              <p>
-                <span className="font-medium">Total Events Found:</span>{" "}
-                {csvSummary.totalEventCount}
-              </p>
-            </div>
-          )}
 
-          {/* Row 1: Controls */}
+      {/* Timeline Area - Conditional on data having been loaded */}
+      {currentTimelineData ? (
+        <div className="flex flex-col gap-6">
+          {/* Row 1: Date Navigation & Export */}
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-1 rounded-md border p-1 bg-white">
@@ -413,8 +367,8 @@ export default function DashboardPage() {
                   selectedDate={selectedDate}
                   onDateChange={handleDateChange}
                   disabled={isLoading}
-                  fromDate={isFileData ? fileDateRange?.start : undefined}
-                  toDate={isFileData ? fileDateRange?.end : undefined}
+                  fromDate={fileDateRange?.start}
+                  toDate={fileDateRange?.end}
                   highlightedDays={datesWithEvents}
                   className="border-0 bg-white shadow-none"
                 />
@@ -432,14 +386,6 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-4 flex-grow justify-end">
-              <ActivityFilters
-                filters={filters}
-                onFilterChange={handleFilterChange}
-              />
-              <ZoomControls
-                zoomLevel={zoomLevel}
-                onZoomChange={handleZoomChange}
-              />
               <ExportControls
                 timelineData={currentTimelineData}
                 disabled={!currentTimelineData || isLoading}
@@ -447,12 +393,12 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Add Daily User Summary component here */}
-          {currentTimelineData && currentTimelineData.activities.length > 0 && (
+          {/* Daily User Summary */}
+          {currentTimelineData.activities.length > 0 && (
             <DailyUserSummary activities={currentTimelineData.activities} />
           )}
 
-          {/* Row 2: Main Timeline and Summary */}
+          {/* Row 2: Main Timeline Container */}
           <div className="grid grid-cols-1 gap-6">
             <div className="lg:col-span-4 border rounded-lg p-4 bg-card min-h-[150px]">
               {isLoading && (
@@ -467,13 +413,7 @@ export default function DashboardPage() {
                 !error &&
                 !currentTimelineData?.activities.length && (
                   <div className="text-center p-4 text-muted-foreground">
-                    {isFileData
-                      ? "No activity data found in file for the selected date."
-                      : selectedEndpoint
-                      ? `No activity data found for endpoint ${
-                          selectedEndpoint.name
-                        } on ${format(selectedDate, "PPP")}.`
-                      : "No data to display."}
+                    No activity data found for the selected date.
                   </div>
                 )}
               {!isLoading &&
@@ -487,10 +427,11 @@ export default function DashboardPage() {
                     <Timeline
                       activities={currentTimelineData.activities}
                       filters={filters}
+                      onFilterChange={handleFilterChange}
                       zoomLevel={zoomLevel}
+                      onZoomChange={handleZoomChange}
                       onActivityClick={handleActivityClick}
                       selectedActivityId={selectedActivity?.id ?? null}
-                      onZoomChange={handleZoomChange}
                       currentDate={selectedDate}
                     />
                   </>
@@ -498,7 +439,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Restore Activity Details */}
+          {/* Activity Details Dialog */}
           <ActivityDetails
             activity={selectedActivity}
             onClose={handleCloseDetails}
@@ -507,7 +448,6 @@ export default function DashboardPage() {
           {/* Row 3: Charts Area */}
           {currentTimelineData && currentTimelineData.activities.length > 0 && (
             <>
-              {/* Updated grid for all three charts */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <ApplicationBreakdownChart
                   activities={currentTimelineData.activities}
@@ -522,7 +462,7 @@ export default function DashboardPage() {
             </>
           )}
 
-          {/* NEW: Hourly Breakdown Panel */}
+          {/* Hourly Breakdown Panel */}
           {currentTimelineData && currentTimelineData.activities.length > 0 && (
             <div>
               <HourlyTimelineBreakdown
@@ -533,7 +473,11 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="text-center p-8 text-muted-foreground">
-          Select a Customer and Endpoint, or load a CSV file to view activity.
+          {isLoading
+            ? "Loading data..."
+            : error
+            ? `Error: ${error}`
+            : "Load a CSV file via URL or upload to view activity."}
         </div>
       )}
     </div>
