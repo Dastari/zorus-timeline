@@ -8,6 +8,14 @@ export enum ActivityType {
   Other = "Other",
 }
 
+// Shared colors for activity types
+export const ACTIVITY_TYPE_COLORS: { [key in ActivityType]: string } = {
+  [ActivityType.Application]: "#3B82F6", // blue-500
+  [ActivityType.WebPage]: "#10B981",     // emerald-500
+  [ActivityType.Idle]: "#C0C0C0",        // amber-500
+  [ActivityType.Other]: "#6B7280",        // gray-500
+};
+
 // Customer/Organization Type
 export interface Customer {
   uuid: string;
@@ -15,7 +23,7 @@ export interface Customer {
   createdDateUtc: string;
 }
 
-// User Type
+// User Type (Note: This is distinct from the username within an Activity from CSV)
 export interface User {
   uuid: string;
   username: string;
@@ -33,6 +41,7 @@ export interface Activity {
   startTime: Date;
   endTime: Date;
   durationMinutes: number;
+  username?: string; // NEW: Store username from CSV row
   details?: string;
   url?: string;
   applicationName?: string;

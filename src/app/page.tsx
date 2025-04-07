@@ -29,6 +29,7 @@ import { ActivityTypeBreakdownChart } from "@/components/charts/ActivityTypeBrea
 import { ApplicationBreakdownChart } from "@/components/charts/ApplicationBreakdownChart";
 import { WebsiteBreakdownChart } from "@/components/charts/WebsiteBreakdownChart";
 import { HourlyTimelineBreakdown } from "@/components/timeline/hourly-timeline-breakdown";
+import { DailyUserSummary } from "@/components/timeline/daily-user-summary";
 
 // Services & Types
 import { getActivities } from "@/services/activity-service";
@@ -204,15 +205,13 @@ export default function DashboardPage() {
     // If selectedEndpoint is set, the useEffect will trigger API fetch.
   };
 
-  // --- Derived State: Filter activities for the selected day ---
-  const activitiesForSelectedDay = useMemo(() => {
-    return allParsedActivities.filter((act) =>
-      isSameDay(act.startTime, selectedDate)
-    );
-  }, [allParsedActivities, selectedDate]);
-
   // --- Derived State: TimelineData object for components ---
   const currentTimelineData: TimelineData | null = useMemo(() => {
+    // Filter activities directly inside this memo
+    const activitiesForSelectedDay = allParsedActivities.filter((act) =>
+      isSameDay(act.startTime, selectedDate)
+    );
+
     const userId = isFileData
       ? "file-user"
       : selectedEndpoint?.lastLoggedOnUserUuid ?? "";
@@ -224,13 +223,13 @@ export default function DashboardPage() {
 
     return {
       date: selectedDate,
-      activities: activitiesForSelectedDay,
+      activities: activitiesForSelectedDay, // Use the locally filtered array
       userId: userId,
       username: username,
     };
   }, [
-    selectedDate,
-    activitiesForSelectedDay,
+    selectedDate, // Ensure dependency on selectedDate
+    allParsedActivities, // Ensure dependency on the source data
     isFileData,
     selectedEndpoint,
     csvSummary,
@@ -322,7 +321,7 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Top Row: Selectors & File Upload */}
-      <div className="flex flex-wrap items-end gap-4 p-4 border rounded-md bg-muted">
+      <div className="flex flex-wrap items-end gap-4 p-4 border rounded-md bg-white shadow-md">
         {/* Customer Selector */}
         <div className="flex-1 min-w-[200px]">
           <label
@@ -401,7 +400,7 @@ export default function DashboardPage() {
           {/* Row 1: Controls */}
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1 rounded-md border p-1">
+              <div className="flex items-center gap-1 rounded-md border p-1 bg-white">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -417,7 +416,7 @@ export default function DashboardPage() {
                   fromDate={isFileData ? fileDateRange?.start : undefined}
                   toDate={isFileData ? fileDateRange?.end : undefined}
                   highlightedDays={datesWithEvents}
-                  className="border-0"
+                  className="border-0 bg-white shadow-none"
                 />
                 <Button
                   variant="ghost"
@@ -448,7 +447,12 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Row 2: Main Timeline */}
+          {/* Add Daily User Summary component here */}
+          {currentTimelineData && currentTimelineData.activities.length > 0 && (
+            <DailyUserSummary activities={currentTimelineData.activities} />
+          )}
+
+          {/* Row 2: Main Timeline and Summary */}
           <div className="grid grid-cols-1 gap-6">
             <div className="lg:col-span-4 border rounded-lg p-4 bg-card min-h-[150px]">
               {isLoading && (
@@ -504,7 +508,7 @@ export default function DashboardPage() {
           {currentTimelineData && currentTimelineData.activities.length > 0 && (
             <>
               {/* Updated grid for all three charts */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <ApplicationBreakdownChart
                   activities={currentTimelineData.activities}
                 />
@@ -520,7 +524,7 @@ export default function DashboardPage() {
 
           {/* NEW: Hourly Breakdown Panel */}
           {currentTimelineData && currentTimelineData.activities.length > 0 && (
-            <div className="mt-6">
+            <div>
               <HourlyTimelineBreakdown
                 activities={currentTimelineData.activities}
               />

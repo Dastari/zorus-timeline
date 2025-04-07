@@ -56,9 +56,17 @@ function parseTimestampToDate(
   if (!timestampStr) return null;
   try {
     // Ensure input is treated as string before parseFloat
-    const timestampSeconds = parseFloat(String(timestampStr));
-    if (isNaN(timestampSeconds)) return null;
-    const date = new Date(timestampSeconds * 1000);
+    const timestampNum = parseFloat(String(timestampStr));
+    if (isNaN(timestampNum)) return null;
+
+    // Heuristic: Check if timestamp looks like seconds (e.g., 10 digits)
+    // or milliseconds (e.g., 13 digits). Adjust accordingly.
+    // This assumes timestamps are roughly around the current era.
+    // Timestamps around 10^10 are likely seconds, around 10^13 are likely ms.
+    const timestampMs =
+      timestampNum > 100000000000 ? timestampNum : timestampNum * 1000; // If > 100 billion, assume ms, else assume seconds
+
+    const date = new Date(timestampMs);
     return isValid(date) ? date : null;
   } catch {
     return null;
@@ -120,6 +128,8 @@ export async function parseActivityCsv(
           const urlHeader = findHeader(["Website", "URL"]);
           const titleHeader = findHeader(["Window Title", "Title"]);
           const categoryHeader = findHeader(["Category", "Categories"]);
+          // Find the Logged In User header
+          const userHeader = findHeader(["Logged In User"]);
 
           // Validate required headers
           if (!(startTimestampHeader && endTimestampHeader)) {
@@ -129,6 +139,10 @@ export async function parseActivityCsv(
           }
           if (!activityTypeHeader)
             throw new Error('Required header "Activity Type" not found.');
+          // NEW: Validate User header
+          if (!userHeader) {
+            throw new Error('Required header "Logged In User" not found.');
+          }
 
           let minDate: Date | null = null;
           let maxDate: Date | null = null;
@@ -194,13 +208,17 @@ export async function parseActivityCsv(
                 ? String(row[categoryHeader ?? ""])
                 : undefined;
 
+            // Get the username, default to 'Unknown' if empty but present
+            const username = String(row[userHeader!] ?? "Unknown User").trim();
+
             const activity: Activity = {
               id: `csv-${i}`,
               type: activityType,
               title: title,
               startTime: startTime,
               endTime: endTime,
-              durationMinutes: durationMinutes, // Use calculated duration
+              durationMinutes: durationMinutes,
+              username: username || "Unknown User", // Assign username, ensure non-empty
               applicationName: appName,
               url: url,
               category: category,

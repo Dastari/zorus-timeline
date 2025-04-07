@@ -20,7 +20,7 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
+  --background: oklch(0.94 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -126,6 +126,11 @@
 }
 
 @layer base {
+  html {
+    /* Always show scrollbar to prevent layout shift */
+    overflow-y: scroll;
+  }
+
   * {
     @apply border-border outline-ring/50;
   }

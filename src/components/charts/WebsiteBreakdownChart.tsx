@@ -13,6 +13,11 @@ import {
 } from "recharts";
 import { Activity, ActivityType } from "@/types";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import {
+  mergeIntervals,
+  calculateTotalDuration,
+  TimeInterval,
+} from "@/lib/activity-utils";
 
 interface WebsiteBreakdownChartProps {
   activities: Activity[];
@@ -22,12 +27,18 @@ const getDomain = (url: string | undefined): string | null => {
   if (!url) return null;
   try {
     const parsedUrl = new URL(url);
-    if (!parsedUrl.hostname && parsedUrl.protocol) {
-      return parsedUrl.protocol.replace(/:$/, "");
+    if (
+      !parsedUrl.hostname &&
+      parsedUrl.protocol &&
+      parsedUrl.protocol !== "http:" &&
+      parsedUrl.protocol !== "https:"
+    ) {
+      return parsedUrl.protocol.replace(/:$/, "") || "local";
     }
     return parsedUrl.hostname.replace(/^www\./, "");
   } catch {
-    return null;
+    console.warn(`Could not parse URL: ${url}`);
+    return "invalid_url";
   }
 };
 
@@ -37,7 +48,7 @@ const formatDuration = (totalMinutes: number): string => {
   const minutes = Math.round(totalMinutes % 60);
   let result = "";
   if (hours > 0) result += `${hours}h `;
-  if (minutes > 0) result += `${minutes}m`;
+  if (minutes > 0 || hours === 0) result += `${minutes}m`;
   return result.trim();
 };
 
@@ -45,23 +56,51 @@ export function WebsiteBreakdownChart({
   activities,
 }: WebsiteBreakdownChartProps) {
   const data = React.useMemo(() => {
-    const domainDurations: { [domain: string]: number } = {};
+    // 1. Group intervals by Domain
+    const domainIntervals: { [domain: string]: TimeInterval[] } = {};
 
-    activities
+    (activities ?? [])
       .filter((act) => act.type === ActivityType.WebPage && act.url)
       .forEach((activity) => {
         const domain = getDomain(activity.url);
         if (domain) {
-          domainDurations[domain] =
-            (domainDurations[domain] || 0) + activity.durationMinutes;
+          if (!domainIntervals[domain]) {
+            domainIntervals[domain] = [];
+          }
+          if (
+            activity.startTime instanceof Date &&
+            activity.endTime instanceof Date
+          ) {
+            domainIntervals[domain].push({
+              start: activity.startTime,
+              end: activity.endTime,
+            });
+          } else {
+            console.warn(
+              "Skipping web activity due to invalid dates:",
+              activity
+            );
+          }
         }
       });
 
-    return Object.entries(domainDurations)
-      .map(([name, duration]) => ({ name, duration }))
-      .sort((a, b) => b.duration - a.duration);
+    // 2. Merge intervals and calculate duration *for each domain individually*
+    const domainSummaries = Object.entries(domainIntervals)
+      .map(([name, intervals]) => {
+        const merged = mergeIntervals(intervals);
+        const totalMinutes = calculateTotalDuration(merged);
+        return {
+          name,
+          duration: totalMinutes,
+        };
+      })
+      .filter((entry) => entry.duration > 0) // Filter out zero-duration domains
+      .sort((a, b) => b.duration - a.duration); // Sort descending by duration
+
+    return domainSummaries;
   }, [activities]);
 
+  // Get top 10 based on individually merged durations
   const topDomains = data.slice(0, 10);
 
   if (!activities || activities.length === 0 || topDomains.length === 0) {

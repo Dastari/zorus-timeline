@@ -11,34 +11,75 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { Activity, ActivityType } from "@/types";
+import { Activity, ACTIVITY_TYPE_COLORS, ActivityType } from "@/types";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import {
+  mergeIntervals,
+  calculateTotalDuration,
+  TimeInterval,
+} from "@/lib/activity-utils";
 
 interface ApplicationBreakdownChartProps {
   activities: Activity[];
 }
 
+const formatDuration = (totalMinutes: number): string => {
+  if (totalMinutes < 1) return "< 1 min";
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = Math.round(totalMinutes % 60);
+  let result = "";
+  if (hours > 0) result += `${hours}h `;
+  if (minutes > 0 || hours === 0) result += `${minutes}m`;
+  return result.trim();
+};
+
 export function ApplicationBreakdownChart({
   activities,
 }: ApplicationBreakdownChartProps) {
   const data = React.useMemo(() => {
-    const appDurations: { [appName: string]: number } = {};
+    // 1. Group intervals by Application Name
+    const appIntervals: { [appName: string]: TimeInterval[] } = {};
 
-    activities
+    (activities ?? [])
       .filter(
         (act) => act.type === ActivityType.Application && act.applicationName
       )
       .forEach((activity) => {
         const appName = activity.applicationName!;
-        appDurations[appName] =
-          (appDurations[appName] || 0) + activity.durationMinutes;
+        if (!appIntervals[appName]) {
+          appIntervals[appName] = [];
+        }
+        if (
+          activity.startTime instanceof Date &&
+          activity.endTime instanceof Date
+        ) {
+          appIntervals[appName].push({
+            start: activity.startTime,
+            end: activity.endTime,
+          });
+        } else {
+          console.warn("Skipping app activity due to invalid dates:", activity);
+        }
       });
 
-    return Object.entries(appDurations)
-      .map(([name, duration]) => ({ name, duration }))
-      .sort((a, b) => b.duration - a.duration);
+    // 2. Merge intervals and calculate duration *for each app individually*
+    const appSummaries = Object.entries(appIntervals)
+      .map(([name, intervals]) => {
+        // Merge intervals only for this specific app
+        const merged = mergeIntervals(intervals);
+        const totalMinutes = calculateTotalDuration(merged);
+        return {
+          name,
+          duration: totalMinutes,
+        };
+      })
+      .filter((entry) => entry.duration > 0) // Filter out zero-duration apps
+      .sort((a, b) => b.duration - a.duration); // Sort descending by duration
+
+    return appSummaries;
   }, [activities]);
 
+  // Get top 10 based on individually merged durations
   const topApps = data.slice(0, 10);
 
   if (!activities || activities.length === 0 || topApps.length === 0) {
@@ -55,16 +96,6 @@ export function ApplicationBreakdownChart({
       </Card>
     );
   }
-
-  const formatDuration = (totalMinutes: number): string => {
-    if (totalMinutes < 1) return "< 1 min";
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = Math.round(totalMinutes % 60);
-    let result = "";
-    if (hours > 0) result += `${hours}h `;
-    if (minutes > 0) result += `${minutes}m`;
-    return result.trim();
-  };
 
   return (
     <Card>
@@ -105,7 +136,11 @@ export function ApplicationBreakdownChart({
               cursor={{ fill: "transparent" }}
             />
             <Legend formatter={() => "Time Spent"} />
-            <Bar dataKey="duration" fill="#8884d8" name="Time Spent" />
+            <Bar
+              dataKey="duration"
+              fill={ACTIVITY_TYPE_COLORS[ActivityType.Application]}
+              name="Time Spent"
+            />
           </BarChart>
         </ResponsiveContainer>
       </CardContent>

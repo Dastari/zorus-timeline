@@ -2,7 +2,13 @@
 
 import React, { useRef, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Activity, FilterState, ZoomLevel, ActivityType } from "@/types";
+import {
+  Activity,
+  FilterState,
+  ZoomLevel,
+  ActivityType,
+  ACTIVITY_TYPE_COLORS,
+} from "@/types";
 import { format, startOfDay, differenceInMinutes, addMinutes } from "date-fns";
 import {
   Tooltip,
@@ -23,14 +29,6 @@ interface TimelineProps {
   currentDate: Date;
   onActivityClick: (activity: Activity | null) => void;
 }
-
-// Define colors for each activity type
-const ACTIVITY_COLORS: { [key in ActivityType]: string } = {
-  [ActivityType.Application]: "#3B82F6", // blue-500
-  [ActivityType.WebPage]: "#10B981", // emerald-500
-  [ActivityType.Idle]: "#F59E0B", // amber-500
-  [ActivityType.Other]: "#6B7280", // gray-500
-};
 
 // Helper to map filter state keys to activity types
 const filterTypeMap: Record<keyof FilterState, ActivityType> = {
@@ -57,7 +55,7 @@ const zoomLevelToDuration: Record<ZoomLevel, number> = {
 };
 
 // Reinstate MIN_DURATION_MINUTES
-const MIN_DURATION_MINUTES = 15; 
+const MIN_DURATION_MINUTES = 15;
 const MAX_DURATION_MINUTES = 1440; // 24 hours
 
 // NEW: Helper function to draw a rounded rectangle path and fill it
@@ -69,27 +67,27 @@ function fillRoundedRect(
   height: number,
   radius: number
 ) {
-    // Ensure radius is not too large for the dimensions
-    radius = Math.min(radius, width / 2, height / 2);
-    // Prevent drawing if width/height is too small for the radius
-    if (width < 2 * radius || height < 2 * radius) {
-        // Fallback to sharp corners if too small
-        ctx.fillRect(x, y, width, height);
-        return;
-    }
+  // Ensure radius is not too large for the dimensions
+  radius = Math.min(radius, width / 2, height / 2);
+  // Prevent drawing if width/height is too small for the radius
+  if (width < 2 * radius || height < 2 * radius) {
+    // Fallback to sharp corners if too small
+    ctx.fillRect(x, y, width, height);
+    return;
+  }
 
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.arcTo(x + width, y, x + width, y + radius, radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
-    ctx.lineTo(x + radius, y + height);
-    ctx.arcTo(x, y + height, x, y + height - radius, radius);
-    ctx.lineTo(x, y + radius);
-    ctx.arcTo(x, y, x + radius, y, radius);
-    ctx.closePath();
-    ctx.fill(); 
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.arcTo(x + width, y, x + width, y + radius, radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+  ctx.lineTo(x + radius, y + height);
+  ctx.arcTo(x, y + height, x, y + height - radius, radius);
+  ctx.lineTo(x, y + radius);
+  ctx.arcTo(x, y, x + radius, y, radius);
+  ctx.closePath();
+  ctx.fill();
 }
 
 // NEW: Helper function to draw a rounded rectangle stroke (for selection)
@@ -101,23 +99,23 @@ function strokeRoundedRect(
   height: number,
   radius: number
 ) {
-    radius = Math.min(radius, width / 2, height / 2);
-    if (width < 2 * radius || height < 2 * radius) {
-        ctx.strokeRect(x, y, width, height);
-        return;
-    }
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.arcTo(x + width, y, x + width, y + radius, radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
-    ctx.lineTo(x + radius, y + height);
-    ctx.arcTo(x, y + height, x, y + height - radius, radius);
-    ctx.lineTo(x, y + radius);
-    ctx.arcTo(x, y, x + radius, y, radius);
-    ctx.closePath();
-    ctx.stroke();
+  radius = Math.min(radius, width / 2, height / 2);
+  if (width < 2 * radius || height < 2 * radius) {
+    ctx.strokeRect(x, y, width, height);
+    return;
+  }
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.arcTo(x + width, y, x + width, y + radius, radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+  ctx.lineTo(x + radius, y + height);
+  ctx.arcTo(x, y + height, x, y + height - radius, radius);
+  ctx.lineTo(x, y + radius);
+  ctx.arcTo(x, y, x + radius, y, radius);
+  ctx.closePath();
+  ctx.stroke();
 }
 
 export function Timeline({
@@ -286,7 +284,8 @@ export function Timeline({
       const barWidth = durationInView * pixelsPerMinute;
 
       ctx.fillStyle =
-        ACTIVITY_COLORS[activity.type] || ACTIVITY_COLORS[ActivityType.Other];
+        ACTIVITY_TYPE_COLORS[activity.type] ||
+        ACTIVITY_TYPE_COLORS[ActivityType.Other];
 
       // Use the helper function to draw the filled rounded rectangle
       fillRoundedRect(ctx, x, SCALE_HEIGHT, barWidth, BAR_HEIGHT, cornerRadius);
